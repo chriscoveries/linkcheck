@@ -1,0 +1,21 @@
+# Hosts that only shorten links. An intermediate hop on one of these is expected.
+# One hostname per line. Subdomains match.
+t.co
+bit.ly
+bitly.com
+tinyurl.com
+ow.ly
+buff.ly
+j.mp
+is.gd
+rebrand.ly
+cutt.ly
+shorturl.at
+goo.gl
+lnkd.in
+rb.gy
+t.ly
+v.gd
+trib.al
+dlvr.it
+ift.tt
