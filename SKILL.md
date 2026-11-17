@@ -28,6 +28,10 @@ Write the draft to a file and run `linkcheck --json --no-age --file <draft>`.
 - Exit 1: do not post. Show reasons and any clean link. Wait for an explicit yes.
 - Exit 2: do not post. Stop.
 
-## Already posted
+## X MCP (preferred for live posts)
 
-Follow `playbooks/check-own-posts.md` only when a bearer token is already in the environment. Otherwise skip it and say the history check was skipped.
+When this bot has an X MCP server named `x`, follow `playbooks/x-mcp.md`. One loop: `x-plan --json` → CallDynamicTool each step → save raw file → `x-ingest --file … --json` → act on exit `0/1/2`.
+
+## Already posted (bearer fallback)
+
+If X MCP is unavailable, follow `playbooks/check-own-posts.md` only when a bearer token is already set. Otherwise skip it and say the history check was skipped.

@@ -17,8 +17,10 @@ _URL_RE = re.compile(
 )
 _TRAIL_PUNCT = ".,;:!?)\"']>"
 
-# Query keys commonly used for cross-account linking / click attribution.
+# Query keys to strip from clean URLs and (non-utm) to flag as tracking.
+# Keep in sync with tracking.IDENTIFYING_KEYS for attribution keys.
 TRACKING_KEYS = {
+    # Attribution / affiliate
     "cid",
     "creator",
     "campaign",
@@ -29,15 +31,41 @@ TRACKING_KEYS = {
     "clickid",
     "click_id",
     "cb",
+    "ref",
     "ref_id",
     "partner_id",
     "publisher_id",
+    # Platform click ids
+    "fbclid",
+    "gclid",
+    "gbraid",
+    "wbraid",
+    "msclkid",
+    "twclid",
+    "igshid",
+    "mc_eid",
+    "mc_cid",
+    # YouTube share / X share tokens
+    "si",
+    "s",
+    "t",
+    # UTM family
     "utm_source",
     "utm_medium",
     "utm_campaign",
     "utm_term",
     "utm_content",
     "utm_id",
+}
+
+# Intermediate hops on these hosts are expected platform plumbing, not trackers.
+PLATFORM_HOPS = {
+    "t.co",
+    "x.com",
+    "twitter.com",
+    "google.com",
+    "youtube.com",
+    "youtu.be",
 }
 
 
@@ -70,6 +98,16 @@ def hostname(url: str) -> str:
     return host.lower().removeprefix("www.")
 
 
+def is_platform_hop(host: str) -> bool:
+    """True when host is a known platform shortener / own hop (or a subdomain)."""
+    h = (host or "").lower().removeprefix("www.")
+    if not h:
+        return False
+    if h in PLATFORM_HOPS:
+        return True
+    return any(h.endswith("." + p) for p in PLATFORM_HOPS)
+
+
 def strip_tracking(url: str) -> str:
     """Return a canonical URL with known tracking query params removed."""
     try:
@@ -79,7 +117,7 @@ def strip_tracking(url: str) -> str:
     kept = [
         (k, v)
         for k, v in parse_qsl(parts.query, keep_blank_values=True)
-        if k.lower() not in TRACKING_KEYS
+        if k.lower() not in TRACKING_KEYS and not k.lower().startswith("utm_")
     ]
     return urlunparse(
         (parts.scheme, parts.netloc, parts.path, parts.params, urlencode(kept), "")

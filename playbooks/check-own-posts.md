@@ -1,18 +1,19 @@
 # check-own-posts
 
-Use this when the account should review links it has already posted. Drafts that are not posted yet use `check-draft` instead.
+Use this when the account should review links it has already posted and the bot does **not** have an X MCP server. If MCP `x` is available, use `x-mcp` (`x-plan own-posts` → MCP calls → `x-ingest`) instead. Drafts that are not posted yet use `check-draft`.
 
 ## Steps
 
-1. If `X_BEARER_TOKEN` is unset and `TWITTER_BEARER_TOKEN` is unset, do not call the network. Tell the user the history check was skipped because no token is set. Still run `check-draft` on anything not yet posted.
-2. You need the numeric account id. If you do not have it, ask once. Do not guess.
-3. Run:
+1. If X MCP is available, switch to `playbooks/x-mcp.md` and stop this playbook.
+2. If `X_BEARER_TOKEN` is unset and `TWITTER_BEARER_TOKEN` is unset, do not call the network. Tell the user the history check was skipped because no token is set. Still run `check-draft` on anything not yet posted.
+3. You need the numeric account id. If you do not have it, ask once. Do not guess.
+4. Run:
 
 ```bash
 linkcheck monitor --user-id <id> --json
 ```
 
-4. The JSON `posts` array contains only posts that are WARN or BLOCK. `exit_code` 0 means none of the fetched posts failed the check.
+5. The JSON `posts` array contains only posts that are WARN or BLOCK. `exit_code` 0 means none of the fetched posts failed the check.
 
 | Exit | Action |
 | --- | --- |

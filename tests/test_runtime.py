@@ -14,6 +14,9 @@ def test_runtime_index_matches_files():
     payload = runtime_payload()
     assert payload["decisions"]["2"] == "stop"
     assert "check-draft" in playbook_text("check-draft")
+    ids = {p.id for p in index.playbooks}
+    assert "x-mcp" in ids
+    assert "x-plan" in playbook_text("x-mcp")
     json.dumps(payload)
 
 

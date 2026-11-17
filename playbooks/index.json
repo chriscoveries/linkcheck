@@ -28,9 +28,15 @@
       "command": "linkcheck --json --no-age --file <draft-file>"
     },
     {
+      "id": "x-mcp",
+      "file": "x-mcp.md",
+      "when": "When the bot has an X MCP server named x. Plan calls, run them, save raw JSON, ingest.",
+      "command": "linkcheck x-plan <playbook> --json && linkcheck x-ingest --file <raw.json> --json"
+    },
+    {
       "id": "check-own-posts",
       "file": "check-own-posts.md",
-      "when": "When reviewing links this account has already posted.",
+      "when": "When reviewing links this account has already posted and X MCP is unavailable. Requires a bearer token.",
       "command": "linkcheck monitor --user-id <id> --json",
       "env": ["X_BEARER_TOKEN"]
     }

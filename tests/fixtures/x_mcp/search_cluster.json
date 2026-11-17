@@ -1,0 +1,32 @@
+{
+  "data": [
+    {
+      "id": "1",
+      "text": "shared product update ensures continued leadership in the open market today",
+      "author_id": "10",
+      "created_at": "2024-06-01T10:00:00.000Z",
+      "entities": {"urls": []}
+    },
+    {
+      "id": "2",
+      "text": "shared product update ensures continued leadership in the open market tonight",
+      "author_id": "11",
+      "created_at": "2024-06-01T11:00:00.000Z",
+      "entities": {"urls": []}
+    },
+    {
+      "id": "3",
+      "text": "shared product update ensures continued leadership in the open market again",
+      "author_id": "12",
+      "created_at": "2024-06-01T12:00:00.000Z",
+      "entities": {"urls": []}
+    }
+  ],
+  "includes": {
+    "users": [
+      {"id": "10", "username": "acct_a"},
+      {"id": "11", "username": "acct_b"},
+      {"id": "12", "username": "acct_c"}
+    ]
+  }
+}

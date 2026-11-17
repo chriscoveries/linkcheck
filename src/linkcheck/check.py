@@ -20,7 +20,24 @@ from .paths import default_path
 from .script_match import run_script_checks
 from .tracking import analyze_tracking_params
 from .tracer import final_url, trace_url
-from .urls import extract_urls, hostname, strip_tracking
+from .urls import extract_urls, hostname, is_platform_hop, strip_tracking
+
+DEAD_LINK_STATUSES = {401, 403, 404, 410}
+
+
+def _dedupe_findings(findings: list[Finding]) -> list[Finding]:
+    """Drop exact duplicate reasons (same code + message + host/url detail)."""
+    out: list[Finding] = []
+    seen: set[tuple[str, str, str]] = set()
+    for f in findings:
+        host = str((f.detail or {}).get("host") or "")
+        url = str((f.detail or {}).get("url") or "")
+        key = (f.code, f.message, host or url)
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(f)
+    return out
 
 
 def analyze_url(
@@ -62,13 +79,19 @@ def analyze_url(
         for finding in analyze_tracking_params(hop.url):
             report.findings.append(finding)
 
-    # Intermediate hop that is neither a known shortener nor the destination
+    # Intermediate hop that is neither a known shortener, platform hop, nor destination
     dest = hostname(report.final_url or "")
+    seen_intermediate: set[str] = set()
     if len(hop_hosts) >= 2:
         for host in hop_hosts[:-1]:
+            if host in seen_intermediate:
+                continue
+            seen_intermediate.add(host)
             if domain_matches(host, allowlist):
                 continue
             if domain_matches(host, shorteners):
+                continue
+            if is_platform_hop(host):
                 continue
             if dest and host == dest:
                 continue
@@ -84,10 +107,24 @@ def analyze_url(
                 )
             )
 
+    if hops:
+        last = hops[-1]
+        if last.status in DEAD_LINK_STATUSES:
+            report.findings.append(
+                Finding(
+                    severity="INFO",
+                    code="dead_link",
+                    message=f"Final hop returned HTTP {last.status}",
+                    detail={"status": last.status, "url": last.url},
+                )
+            )
+
     if check_age:
         checked: set[str] = set()
         for host in hop_hosts:
             if host in checked or domain_matches(host, allowlist) or domain_matches(host, shorteners):
+                continue
+            if is_platform_hop(host):
                 continue
             checked.add(host)
             age_finding = check_domain_age(host, session=session)
@@ -104,6 +141,7 @@ def analyze_url(
             )
         )
 
+    report.findings = _dedupe_findings(report.findings)
     return report
 
 
@@ -155,15 +193,12 @@ def run_check(
     for ur in url_reports:
         reasons.extend(ur.findings)
     reasons.extend(script.findings)
+    reasons = _dedupe_findings(reasons)
 
     # Collapse to worst non-INFO for verdict; INFO alone → OK
     severities = [r.severity for r in reasons if r.severity != Severity.INFO.value]
     if not severities:
-        # all info or empty
-        if any(r.severity == Severity.INFO.value for r in reasons):
-            verdict = Severity.OK
-        else:
-            verdict = Severity.OK
+        verdict = Severity.OK
     else:
         verdict = worst_severity(*severities)
 
@@ -195,6 +230,7 @@ def format_human(result: CheckResult) -> str:
             "script_near_duplicate",
             "script_phrase",
             "young_domain",
+            "posting_time_cluster",
         }
     ]
     if linkable:

@@ -11,22 +11,47 @@ from . import __version__
 from .check import format_human, run_check
 from .paths import default_path
 
+_SUBCOMMANDS = frozenset({"runtime", "monitor", "x-plan", "x-ingest"})
+
 
 def _read_text_arg(args: argparse.Namespace) -> str:
     chunks: list[str] = []
-    if args.text is not None:
+    if getattr(args, "text", None) is not None:
         chunks.append(args.text)
-    if args.file:
+    if getattr(args, "file", None):
         chunks.append(Path(args.file).read_text(encoding="utf-8"))
-    if args.stdin or (not chunks and not args.urls and not sys.stdin.isatty()):
+    if getattr(args, "stdin", False) or (
+        not chunks and not getattr(args, "urls", None) and not sys.stdin.isatty()
+    ):
         chunks.append(sys.stdin.read())
-    # URLs as positional args are also treated as draft material if no text given
-    if args.urls and not chunks:
+    if getattr(args, "urls", None) and not chunks:
         chunks.append(" ".join(args.urls))
     return "\n".join(chunks).strip()
 
 
-def build_parser() -> argparse.ArgumentParser:
+def _add_check_flags(p: argparse.ArgumentParser) -> None:
+    p.add_argument("--text", "-t", help="Draft text to inspect")
+    p.add_argument("--file", "-f", help="Read draft text from a file")
+    p.add_argument(
+        "--stdin",
+        action="store_true",
+        help="Read draft text from stdin (also default when stdin is piped)",
+    )
+    p.add_argument(
+        "urls",
+        nargs="*",
+        help="URLs to inspect (optional; also extracted from text)",
+    )
+    p.add_argument("--json", action="store_true", help="Emit machine-readable JSON")
+    p.add_argument("--blocklist", type=Path, help="Domain blocklist file")
+    p.add_argument("--allowlist", type=Path, help="Domain allowlist file")
+    p.add_argument("--shorteners", type=Path, help="Known shortener domains file")
+    p.add_argument("--phrases", type=Path, help="Shared scripted phrases file")
+    p.add_argument("--corpus", type=Path, help="JSONL corpus of recent posts")
+    p.add_argument("--no-age", action="store_true", help="Skip RDAP/WHOIS domain-age checks")
+
+
+def build_check_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="linkcheck",
         description=(
@@ -35,23 +60,22 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     p.add_argument("--version", action="version", version=f"linkcheck {__version__}")
-    p.add_argument("--text", "-t", help="Draft text to inspect")
-    p.add_argument("--file", "-f", help="Read draft text from a file")
-    p.add_argument(
-        "--stdin",
-        action="store_true",
-        help="Read draft text from stdin (also default when stdin is piped)",
-    )
-    p.add_argument("urls", nargs="*", help="URLs to inspect (optional; also extracted from text)")
-    p.add_argument("--json", action="store_true", help="Emit machine-readable JSON (see docs/schema.md)")
-    p.add_argument("--blocklist", type=Path, help="Domain blocklist file (one domain per line)")
-    p.add_argument("--allowlist", type=Path, help="Domain allowlist file")
-    p.add_argument("--shorteners", type=Path, help="Known shortener domains file")
-    p.add_argument("--phrases", type=Path, help="Shared scripted phrases file")
-    p.add_argument("--corpus", type=Path, help="JSONL corpus of recent posts from other accounts")
-    p.add_argument("--no-age", action="store_true", help="Skip RDAP/WHOIS domain-age checks")
+    _add_check_flags(p)
+    return p
 
-    sub = p.add_subparsers(dest="command")
+
+def build_parser() -> argparse.ArgumentParser:
+    """Parser for subcommands only (runtime, monitor, x-plan, x-ingest)."""
+    p = argparse.ArgumentParser(
+        prog="linkcheck",
+        description=(
+            "Inspect a social post draft for leakable redirect hops, tracker domains, "
+            "and shared tracking codes/wording before publishing."
+        ),
+    )
+    p.add_argument("--version", action="version", version=f"linkcheck {__version__}")
+
+    sub = p.add_subparsers(dest="command", required=True)
 
     rt = sub.add_parser("runtime", help="Print the agent playbook index")
     rt.add_argument("--json", action="store_true", help="Emit the runtime index as JSON")
@@ -61,7 +85,74 @@ def build_parser() -> argparse.ArgumentParser:
     mon.add_argument("--user-id", required=True, help="Numeric account id")
     mon.add_argument("--max-results", type=int, default=10)
     mon.add_argument("--json", action="store_true", help="Emit JSON")
+
+    xp = sub.add_parser(
+        "x-plan",
+        help="Print ordered X MCP tool calls for a playbook (agent copies verbatim)",
+    )
+    xp.add_argument(
+        "playbook",
+        nargs="?",
+        choices=["own-posts", "shared-code", "shared-script", "cluster"],
+        help="X MCP playbook id",
+    )
+    xp.add_argument(
+        "--resolve",
+        metavar="PLAN.json",
+        help="Resolve {$from} placeholders in a saved plan using --outputs",
+    )
+    xp.add_argument(
+        "--outputs",
+        metavar="OUTPUTS.json",
+        help="Prior step outputs (list or {step1: ...}) for --resolve",
+    )
+    xp.add_argument("--username", help="Account username (own-posts)")
+    xp.add_argument("--user-id", help="Numeric account id (own-posts)")
+    xp.add_argument("--text", "-t", help="Draft text (shared-code / shared-script)")
+    xp.add_argument("--file", "-f", help="Read draft text from a file")
+    xp.add_argument(
+        "--codes",
+        help="Comma-separated tracking codes (shared-code); merged with codes from draft",
+    )
+    xp.add_argument("--query", "-q", help="Search query (cluster)")
+    xp.add_argument("--start-time", help="ISO start time (cluster)")
+    xp.add_argument("--end-time", help="ISO end time (cluster)")
+    xp.add_argument("--since-id", help="since_id bound (cluster)")
+    xp.add_argument("--until-id", help="until_id bound (cluster)")
+    xp.add_argument("--json", action="store_true", help="Emit JSON (required for agents)")
+
+    xi = sub.add_parser(
+        "x-ingest",
+        help="Parse raw X MCP tool JSON and return the usual check verdict",
+    )
+    xi.add_argument("--file", "-f", required=True, help="Raw MCP tool output JSON file")
+    xi.add_argument("--draft", help="Optional draft text file to compare against ingested posts")
+    xi.add_argument("--json", action="store_true", help="Emit JSON")
+    xi.add_argument(
+        "--verbose",
+        action="store_true",
+        help="Full detail (urls, script_match, posts); default is compact",
+    )
+    xi.add_argument("--no-age", action="store_true", help="Skip domain-age checks when --online")
+    xi.add_argument(
+        "--online",
+        action="store_true",
+        help="Follow URL hops on the network (default is offline / no hop fetch)",
+    )
+    xi.add_argument("--blocklist", type=Path, help="Domain blocklist file")
+    xi.add_argument("--allowlist", type=Path, help="Domain allowlist file")
+    xi.add_argument("--shorteners", type=Path, help="Known shortener domains file")
+    xi.add_argument("--phrases", type=Path, help="Shared scripted phrases file")
     return p
+
+
+def _first_subcommand(argv: list[str]) -> str | None:
+    for a in argv:
+        if a in _SUBCOMMANDS:
+            return a
+        if a == "--":
+            break
+    return None
 
 
 def _cmd_monitor(args: argparse.Namespace) -> int:
@@ -106,20 +197,96 @@ def _cmd_runtime(args: argparse.Namespace) -> int:
     return 0
 
 
-def main(argv: list[str] | None = None) -> int:
-    parser = build_parser()
-    args = parser.parse_args(argv)
+def _read_optional_draft(args: argparse.Namespace) -> str:
+    chunks: list[str] = []
+    if getattr(args, "text", None):
+        chunks.append(args.text)
+    if getattr(args, "file", None):
+        chunks.append(Path(args.file).read_text(encoding="utf-8"))
+    return "\n".join(chunks).strip()
 
-    if args.command == "runtime":
-        return _cmd_runtime(args)
 
-    if args.command == "monitor":
-        return _cmd_monitor(args)
+def _cmd_x_plan(args: argparse.Namespace) -> int:
+    from .x_plan import build_plan, resolve_plan_files
 
+    if args.resolve:
+        if not args.outputs:
+            print("x-plan --resolve requires --outputs", file=sys.stderr)
+            return 1
+        try:
+            plan = resolve_plan_files(Path(args.resolve), Path(args.outputs))
+        except (OSError, ValueError, KeyError, json.JSONDecodeError) as exc:
+            print(str(exc), file=sys.stderr)
+            return 1
+    else:
+        if not args.playbook:
+            print("x-plan requires a playbook or --resolve", file=sys.stderr)
+            return 1
+        text = _read_optional_draft(args)
+        codes = None
+        if getattr(args, "codes", None):
+            codes = [c.strip() for c in args.codes.split(",") if c.strip()]
+        try:
+            plan = build_plan(
+                args.playbook,
+                username=args.username,
+                user_id=args.user_id,
+                text=text,
+                codes=codes,
+                query=args.query,
+                start_time=args.start_time,
+                end_time=args.end_time,
+                since_id=args.since_id,
+                until_id=args.until_id,
+            )
+        except (ValueError, KeyError) as exc:
+            print(str(exc), file=sys.stderr)
+            return 1
+
+    if args.json:
+        # Compact: no indent — agents minimise tokens
+        print(json.dumps(plan, separators=(",", ":"), sort_keys=False))
+    else:
+        print(f"playbook: {plan['playbook']} call_count={plan.get('call_count', len(plan['calls']))}")
+        for i, call in enumerate(plan["calls"], start=1):
+            print(f"step{i}. {call['namespace']}.{call['tool']}")
+            print(f"   {json.dumps(call['arguments'], separators=(',', ':'))}")
+    return 0
+
+
+def _cmd_x_ingest(args: argparse.Namespace) -> int:
+    from .x_ingest import extract_posts, ingest_to_dict, run_ingest
+
+    raw = Path(args.file).read_text(encoding="utf-8")
+    draft = None
+    if args.draft:
+        draft = Path(args.draft).read_text(encoding="utf-8")
+    result = run_ingest(
+        raw,
+        draft_text=draft,
+        blocklist_path=args.blocklist,
+        allowlist_path=args.allowlist,
+        shorteners_path=args.shorteners,
+        phrases_path=args.phrases,
+        check_age=bool(args.online) and not args.no_age,
+        offline=not args.online,
+    )
+    posts = extract_posts(raw)
+    if args.json:
+        body = ingest_to_dict(result, posts=posts, verbose=args.verbose)
+        print(json.dumps(body, separators=(",", ":") if not args.verbose else None, indent=2 if args.verbose else None))
+    else:
+        sys.stdout.write(format_human(result))
+        print(f"Ingested posts: {len(posts)}")
+    return result.exit_code
+
+
+def _cmd_check(args: argparse.Namespace) -> int:
     text = _read_text_arg(args)
     extra = list(args.urls or [])
     if not text and not extra:
-        parser.error("Provide --text, --file, stdin, or URL arguments")
+        print("Provide --text, --file, stdin, or URL arguments", file=sys.stderr)
+        return 2
 
     result = run_check(
         text or " ".join(extra),
@@ -137,6 +304,29 @@ def main(argv: list[str] | None = None) -> int:
     else:
         sys.stdout.write(format_human(result))
     return result.exit_code
+
+
+def main(argv: list[str] | None = None) -> int:
+    argv = list(sys.argv[1:] if argv is None else argv)
+    cmd = _first_subcommand(argv)
+    if cmd is None:
+        # Default check path: positional URLs must not hit subparser choices
+        parser = build_check_parser()
+        args = parser.parse_args(argv)
+        return _cmd_check(args)
+
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    if args.command == "runtime":
+        return _cmd_runtime(args)
+    if args.command == "monitor":
+        return _cmd_monitor(args)
+    if args.command == "x-plan":
+        return _cmd_x_plan(args)
+    if args.command == "x-ingest":
+        return _cmd_x_ingest(args)
+    parser.error(f"unknown command {args.command}")
+    return 2
 
 
 if __name__ == "__main__":

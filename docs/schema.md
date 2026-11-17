@@ -25,7 +25,9 @@ Stable contract for agents and scripts. `schema_version` is currently `"1.0"`.
 }
 ```
 
-Common `code` values: `blocklisted_hop`, `intermediate_hop`, `young_domain`, `domain_age_unknown`, `utm_params`, `campaign_code`, `tracking_param`, `tracking_token`, `clean_url_suggestion`, `script_near_duplicate`, `script_phrase`, `shared_tracking_code`.
+Common `code` values: `blocklisted_hop`, `intermediate_hop`, `young_domain`, `domain_age_unknown`, `utm_params`, `campaign_code`, `tracking_param`, `tracking_token`, `clean_url_suggestion`, `dead_link`, `script_near_duplicate`, `script_phrase`, `shared_tracking_code`, `posting_time_cluster`.
+
+`linkcheck x-ingest --json` defaults to compact `{verdict, exit_code, reasons, clean_urls}`; `--verbose` returns this full schema plus `posts`.
 
 `utm_params` is INFO when the values are ordinary words. `campaign_code` is WARN when a `utm_*` value is an opaque token (for example 8 hex characters), because that token is enough to cluster posts even when the surrounding UTM names look routine.
 

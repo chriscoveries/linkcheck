@@ -9,6 +9,7 @@ from .models import Finding
 from .urls import TRACKING_KEYS
 
 # Identifying / attribution keys (WARN). Plain utm_* is INFO only.
+# Must cover every non-utm key in TRACKING_KEYS so strip and flag stay aligned.
 IDENTIFYING_KEYS = {
     "cid",
     "creator",
@@ -20,9 +21,22 @@ IDENTIFYING_KEYS = {
     "clickid",
     "click_id",
     "cb",
+    "ref",
     "ref_id",
     "partner_id",
     "publisher_id",
+    "fbclid",
+    "gclid",
+    "gbraid",
+    "wbraid",
+    "msclkid",
+    "twclid",
+    "igshid",
+    "mc_eid",
+    "mc_cid",
+    "si",
+    "s",
+    "t",
 }
 
 _TOKEN_RE = re.compile(r"^[a-f0-9]{8}$|^[A-Za-z0-9_-]{16,}$")
