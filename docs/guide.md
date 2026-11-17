@@ -4,7 +4,7 @@ linkcheck reads a draft before it is posted. It pulls every link out of the text
 
 It does not decide whether a post is an advertisement. A clear verdict means "this draft is not carrying that kind of join key." It does not mean the page at the end of the link is trustworthy.
 
-The pictures and the story of how the leak works are in [PROBLEM.md](PROBLEM.md) (`problem.md` redirects there). The JSON a bot should parse is in [schema.md](schema.md). Worked command output is in [examples.md](examples.md).
+The pictures and the story of how the leak works are in [PROBLEM.md](PROBLEM.md) (`problem.md` redirects there). The JSON a bot should parse is in [schema.md](schema.md). Worked command output is in [examples.md](examples.md). Documentation index: [README.md](README.md). Deep dives: [how-it-works.md](how-it-works.md), [configuration.md](configuration.md), [agents.md](agents.md), [monitor.md](monitor.md), [limitations-and-privacy.md](limitations-and-privacy.md).
 
 ## Install
 
@@ -126,6 +126,8 @@ The tool never edits the draft for you.
 
 ## Files
 
+Format details and more examples: [configuration.md](configuration.md).
+
 All of these live in `data/` when you run from a checkout. Lines starting with `#` are comments. Blank lines are ignored. Hostnames are matched without a leading `www.`, and a listed host also matches its subdomains.
 
 ### `blocklist.txt`
@@ -195,9 +197,11 @@ For each hop host that is not on the allowlist and not a known shortener, linkch
 
 ## Posts that are already up
 
+Full reference: [monitor.md](monitor.md). Note: put `--json` **before** `monitor`.
+
 ```bash
 export X_BEARER_TOKEN=...
-linkcheck monitor --user-id 123456789 --json
+linkcheck --json monitor --user-id 123456789
 ```
 
 `X_BEARER_TOKEN` or `TWITTER_BEARER_TOKEN` must be set. `--user-id` is the numeric account id. The command fetches recent posts and runs the same checks with age lookups turned off. The JSON lists only posts that are WARN or BLOCK. Exit code 0 means none of them failed. Exit code 1 means a warning, a missing token, or an API error. Exit code 2 means at least one post was BLOCK.
@@ -205,6 +209,8 @@ linkcheck monitor --user-id 123456789 --json
 This reviews the past. It is not a substitute for checking the draft first.
 
 ## Point a bot at this repo
+
+Copy-paste prompts for several agents: [agents.md](agents.md).
 
 A bot that can read this repo and run a shell command should follow [AGENTS.md](../AGENTS.md). A bot that loads a skill file should follow [SKILL.md](../SKILL.md).
 
@@ -215,6 +221,8 @@ The instruction to give it:
 The bot should pass the draft as data, not assemble a shell command by pasting untrusted text into a double-quoted string. From a program, call `linkcheck.cli.main(["--json", "--text", draft])` or write the draft to a file and use `--file`.
 
 ## Limits
+
+Full note: [limitations-and-privacy.md](limitations-and-privacy.md).
 
 - Redirects that only happen inside a browser after scripts run will be missed, except for a simple `location` assignment or a meta refresh in the first chunk of HTML.
 - Some hosts refuse the request. The hop is still listed, with the error. Codes and blocklist hits on that URL still count. Later hops that were never reached do not.

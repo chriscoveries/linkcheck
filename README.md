@@ -64,10 +64,23 @@ only (`utm_params`).
 
 | Doc | What it is |
 | --- | --- |
-| [docs/guide.md](docs/guide.md) | Install, flags, reading reports, config overview |
-| [docs/examples.md](docs/examples.md) | OK / WARN / BLOCK worked examples |
-| [docs/PROBLEM.md](docs/PROBLEM.md) | Anonymised case study and leak table (`problem.md` redirects here) |
-| [docs/schema.md](docs/schema.md) | `--json` fields for a bot |
+| [docs/README.md](docs/README.md) | Documentation index |
+| [docs/guide.md](docs/guide.md) | Primary user guide (install, reports, flags, files) |
+| [docs/examples.md](docs/examples.md) | Worked OK / WARN / BLOCK output |
+| [docs/quickstart.md](docs/quickstart.md) | Short on-ramp |
+| [docs/PROBLEM.md](docs/PROBLEM.md) | Anonymised case study (`problem.md` redirects here) |
+| [docs/how-it-works.md](docs/how-it-works.md) | Each check in depth |
+| [docs/cli.md](docs/cli.md) | Command / flag / exit / env reference |
+| [docs/configuration.md](docs/configuration.md) | List and corpus formats |
+| [docs/agents.md](docs/agents.md) | Grok Bot, Cursor, Claude Code, Codex, custom agents |
+| [docs/schema.md](docs/schema.md) | `--json` contract (`json-schema.md` redirects here) |
+| [docs/monitor.md](docs/monitor.md) | Already-posted checks |
+| [docs/faq.md](docs/faq.md) | FAQ |
+| [docs/limitations-and-privacy.md](docs/limitations-and-privacy.md) | Limits and network privacy |
+| [docs/troubleshooting.md](docs/troubleshooting.md) | Common failures |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | Development |
+| [SECURITY.md](SECURITY.md) | Security reports |
+| [CHANGELOG.md](CHANGELOG.md) | Releases |
 | [AGENTS.md](AGENTS.md) / [SKILL.md](SKILL.md) | Short agent contracts |
 
 ## Point this repo at your bot
@@ -108,6 +121,8 @@ Exit codes: `0` clear, `1` warn, `2` block. Worked output: [docs/examples.md](do
 - `data/phrases.txt` — shared lines you already know
 - `data/corpus.jsonl` — recent posts by other accounts, so shared codes, wording, and timing clusters can be seen
 
+Details: [docs/configuration.md](docs/configuration.md).
+
 ### Already-posted check
 
 ```bash
@@ -123,7 +138,7 @@ pytest -q
 
 ## Limitations
 
-tracing needs the network; age lookups can soft-fail; wording/timing checks need a corpus; the clean link only strips known keys; the blocklist ships empty.
+See [docs/limitations-and-privacy.md](docs/limitations-and-privacy.md). tracing needs the network; age lookups can soft-fail; wording/timing checks need a corpus; the clean link only strips known keys; the blocklist ships empty.
 
 ## License
 
