@@ -8,7 +8,7 @@ It does not decide whether a post is an advertisement. It only asks whether the 
 
 Shortened links often pass through hidden redirect hops that attach tracking codes. When many accounts post links carrying the same tracker domain or campaign/creator codes, or the same scripted wording, outside researchers can follow those hops and link the accounts together, exposing a coordinated network and the people in it.
 
-A public investigation of coordinated link posting showed the pattern below. The figures in this repo are redrawn with placeholders. They are not copies of anyone's posts, and they do not name accounts, outlets, or tracker hosts.
+The figures below are placeholders. They are not copies of anyone's posts, and they do not name accounts, outlets, or tracker hosts.
 
 ## How the leak happens
 

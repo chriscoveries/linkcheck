@@ -43,16 +43,29 @@ short link  →  hidden hop ?utm_campaign=<shared code>  →  article
 | Near-duplicate wording, a known shared phrase, or the same code on 3+ other accounts in 14 days | **WARN** |
 | A clean link with those tracking keys removed | **INFO** (suggestion) |
 
+## Documentation
+
+| Doc | What it is |
+| --- | --- |
+| [docs/guide.md](docs/guide.md) | Install, every flag, how to read a report, config files, corpus, clean links, already-posted checks |
+| [docs/examples.md](docs/examples.md) | OK, WARN, and BLOCK runs with the output |
+| [docs/problem.md](docs/problem.md) | Why a short link can group accounts, with placeholder figures |
+| [docs/schema.md](docs/schema.md) | `--json` fields for a bot |
+| [AGENTS.md](AGENTS.md) | Instructions for any bot that can run a shell command |
+| [SKILL.md](SKILL.md) | Same rules, as a skill file |
+
 ## Install
 
-```bash
-pip install "git+https://github.com/chriscoveries/linkcheck.git"
-```
-
-Dev / local:
+From a checkout of this repo:
 
 ```bash
 pip install -e ".[dev]"
+```
+
+With credentials that can read the private repo:
+
+```bash
+pip install "git+https://github.com/chriscoveries/linkcheck.git"
 ```
 
 ## Usage
