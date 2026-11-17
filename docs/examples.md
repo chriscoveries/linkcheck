@@ -90,7 +90,7 @@ linkcheck --no-age \
   --text "The same sentence is posted by each account in this example. https://news.example/story?utm_campaign=a1b2c3d4"
 ```
 
-Expect WARN for the phrase, for the near-duplicate wording, and for the shared code `utm_campaign=a1b2c3d4`. Details of those codes are in [guide.md](guide.md).
+Expect WARN for the phrase, for the near-duplicate wording, for the shared code `utm_campaign=a1b2c3d4`, and often `posting_time_cluster` when timestamps sit in the same window. Details: [guide.md](guide.md), [how-it-works.md](how-it-works.md).
 
 ## JSON for a bot
 
