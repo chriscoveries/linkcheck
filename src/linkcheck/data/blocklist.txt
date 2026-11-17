@@ -1,0 +1,7 @@
+# Domain blocklist — one hostname per line (no scheme).
+# Subdomains of a listed domain also match.
+# Ships empty by default; add tracker/redirect hosts you want to hard-fail on.
+#
+# Format examples (placeholders only):
+# tracker.example
+# redirect.example.com

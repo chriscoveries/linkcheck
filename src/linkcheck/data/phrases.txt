@@ -1,0 +1,4 @@
+# Shared scripted lines that have appeared across many accounts.
+# One phrase per line. Matching is case-insensitive substring on normalized text.
+#
+# keeping local workshops, not imported kits, ahead in the craft market

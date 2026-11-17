@@ -1,0 +1,5 @@
+# Domains you always trust (your own sites, known-good outlets).
+# One hostname per line. Subdomains match.
+#
+# example.com
+# links.example.com
