@@ -1,0 +1,42 @@
+{
+  "data": [
+    {
+      "id": "1001",
+      "text": "Duplicate of page1 oldest should be ignored https://t.co/ccc",
+      "author_id": "99",
+      "created_at": "2024-06-01T12:00:00.000Z",
+      "entities": {
+        "urls": [
+          {
+            "url": "https://t.co/ccc",
+            "expanded_url": "https://news.example/c?ref=creator123",
+            "display_url": "news.example/c"
+          }
+        ]
+      }
+    },
+    {
+      "id": "1000",
+      "text": "Page2 last https://t.co/ddd",
+      "author_id": "99",
+      "created_at": "2024-05-01T12:00:00.000Z",
+      "entities": {
+        "urls": [
+          {
+            "url": "https://t.co/ddd",
+            "expanded_url": "https://news.example/d",
+            "display_url": "news.example/d"
+          }
+        ]
+      }
+    }
+  ],
+  "meta": {
+    "result_count": 2,
+    "newest_id": "1001",
+    "oldest_id": "1000"
+  },
+  "includes": {
+    "users": [{"id": "99", "username": "operator"}]
+  }
+}

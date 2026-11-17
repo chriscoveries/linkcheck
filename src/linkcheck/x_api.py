@@ -9,9 +9,8 @@ X_NAMESPACE = "x"
 
 # Cap results per call (tool max for this runtime contract).
 MAX_RESULTS = 25
-# Default for own-posts (keeps tool output smaller for hosts that truncate).
+# Default for legacy get_users_posts paths (search_posts_all min is 10).
 DEFAULT_OWN_POSTS_MAX_RESULTS = 10
-# X get_users_posts rejects values below 5.
 MIN_RESULTS = 5
 
 # Rate limits the consumer must respect; plans never exceed max_calls_per_plan.
@@ -19,7 +18,20 @@ RATE_PER_MINUTE = 30
 RATE_PER_DAY_UTC = 1000
 MAX_CALLS_PER_PLAN = 30
 
-# X API v2 field names as MCP argument arrays (never comma-strings).
+# Minimal payload for link scans — entities.urls carries expanded_url.
+LINK_POST_FIELDS: list[str] = [
+    "id",
+    "created_at",
+    "entities",
+]
+LINK_POST_FIELDS_WITH_TEXT: list[str] = [
+    "id",
+    "created_at",
+    "entities",
+    "text",
+]
+
+# Broader field sets kept for shared-code / cluster / shared-script searches.
 POST_FIELDS: list[str] = [
     "id",
     "text",
@@ -77,6 +89,45 @@ def clamp_max_results(value: int | None, *, default: int = MAX_RESULTS) -> int:
     return max(MIN_RESULTS, min(n, MAX_RESULTS))
 
 
+def link_account_query(
+    username: str,
+    *,
+    include_reposts: bool = False,
+    exclude_replies: bool = False,
+) -> str:
+    """Only posts that contain links. Default excludes retweets."""
+    parts = [f"from:{username.lstrip('@')}", "has:links"]
+    if not include_reposts:
+        parts.append("-is:retweet")
+    if exclude_replies:
+        parts.append("-is:reply")
+    return " ".join(parts)
+
+
+def link_search_args(
+    query: str,
+    *,
+    next_token: str | None = None,
+    since_id: str | None = None,
+    until_id: str | None = None,
+    with_text: bool = False,
+) -> dict[str, Any]:
+    """Minimal search_posts_all args: no expansions, no user.fields, max_results=25."""
+    args: dict[str, Any] = {
+        "query": query,
+        "max_results": MAX_RESULTS,
+        "sort_order": "recency",
+        "post.fields": list(LINK_POST_FIELDS_WITH_TEXT if with_text else LINK_POST_FIELDS),
+    }
+    if next_token is not None:
+        args["next_token"] = next_token
+    if since_id is not None:
+        args["since_id"] = since_id
+    if until_id is not None:
+        args["until_id"] = until_id
+    return args
+
+
 def search_posts_args(
     query: str,
     *,
@@ -84,6 +135,7 @@ def search_posts_args(
     end_time: str | None = None,
     since_id: str | None = None,
     until_id: str | None = None,
+    next_token: str | None = None,
     sort_order: str = "recency",
     max_results: int | None = None,
 ) -> dict[str, Any]:
@@ -103,6 +155,8 @@ def search_posts_args(
         args["since_id"] = since_id
     if until_id is not None:
         args["until_id"] = until_id
+    if next_token is not None:
+        args["next_token"] = next_token
     return args
 
 
@@ -121,7 +175,7 @@ def finalize_plan(playbook: str, calls: list[dict[str, Any]], **extra: Any) -> d
     for call in calls:
         args = call.get("arguments") or {}
         if "max_results" in args:
-            args["max_results"] = clamp_max_results(int(args["max_results"]))
+            args["max_results"] = min(int(args["max_results"]), MAX_RESULTS)
     body: dict[str, Any] = {
         "playbook": playbook,
         "call_count": len(calls),

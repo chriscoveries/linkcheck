@@ -11,21 +11,17 @@ from urllib.parse import parse_qs, urlparse
 from .tracking import extract_tracking_codes
 from .urls import extract_urls
 from .x_api import (
-    DEFAULT_OWN_POSTS_MAX_RESULTS,
     MAX_CALLS_PER_PLAN,
     MAX_RESULTS,
-    POST_FIELDS,
-    USER_FIELDS,
-    EXPANSIONS,
-    clamp_max_results,
     finalize_plan,
-    from_ref,
+    link_account_query,
+    link_search_args,
     mcp_call,
     search_posts_args,
 )
 from .x_ingest import strip_wrappers
 
-PLAYBOOKS = ("own-posts", "shared-code", "shared-script", "cluster")
+PLAYBOOKS = ("own-posts", "shared-code", "shared-script", "cluster", "all-posts")
 
 _TOKEN_RE = re.compile(r"\b([a-f0-9]{8}|[A-Za-z0-9_-]{16,})\b")
 _SENTENCE_RE = re.compile(r"[^.!?]+[.!?]?")
@@ -107,48 +103,46 @@ def plan_own_posts(
     username: str | None = None,
     user_id: str | None = None,
     max_results: int | None = None,
+    include_reposts: bool = False,
+    exclude_replies: bool = False,
+    with_text: bool = False,
+    preflight: bool = False,
 ) -> dict[str, Any]:
+    """Recent link posts only via search_posts_all (never pages link-less posts)."""
+    del max_results  # always 25 for link reads
     if not username and not user_id:
-        raise ValueError("own-posts requires --username or --user-id")
+        raise ValueError("own-posts requires --username (preferred) or --user-id")
+    if not username:
+        # user_id alone cannot build from: query; keep a minimal resolve+posts path unused
+        raise ValueError("own-posts link scan requires --username for from: query")
 
-    n = clamp_max_results(max_results, default=DEFAULT_OWN_POSTS_MAX_RESULTS)
+    query = link_account_query(
+        username, include_reposts=include_reposts, exclude_replies=exclude_replies
+    )
     calls: list[dict[str, Any]] = []
-    if username and not user_id:
+    if preflight:
         calls.append(
             mcp_call(
-                "get_users_by_username",
-                {
-                    "username": username.lstrip("@"),
-                    "user.fields": list(USER_FIELDS),
-                },
+                "get_posts_counts_recent",
+                {"query": query, "granularity": "day"},
             )
         )
-        calls.append(
-            mcp_call(
-                "get_users_posts",
-                {
-                    "id": from_ref("step1.data.id"),
-                    "max_results": n,
-                    "post.fields": list(POST_FIELDS),
-                    "expansions": list(EXPANSIONS),
-                    "user.fields": list(USER_FIELDS),
-                },
-            )
+    calls.append(
+        mcp_call(
+            "search_posts_all",
+            link_search_args(query, with_text=with_text),
         )
-    else:
-        calls.append(
-            mcp_call(
-                "get_users_posts",
-                {
-                    "id": str(user_id),
-                    "max_results": n,
-                    "post.fields": list(POST_FIELDS),
-                    "expansions": list(EXPANSIONS),
-                    "user.fields": list(USER_FIELDS),
-                },
-            )
-        )
-    return finalize_plan("own-posts", calls)
+    )
+    return finalize_plan(
+        "own-posts",
+        calls,
+        query=query,
+        read_estimate={
+            "page_size": MAX_RESULTS,
+            "formula": "ceil(posts_with_links / 25) = reads",
+            "this_plan_reads": 1,
+        },
+    )
 
 
 def plan_shared_code(
@@ -225,6 +219,10 @@ def build_plan(playbook: str, **kwargs: Any) -> dict[str, Any]:
             username=kwargs.get("username"),
             user_id=kwargs.get("user_id"),
             max_results=max_results,
+            include_reposts=bool(kwargs.get("include_reposts")),
+            exclude_replies=bool(kwargs.get("exclude_replies")),
+            with_text=bool(kwargs.get("with_text")),
+            preflight=bool(kwargs.get("preflight")),
         )
     if playbook == "shared-code":
         return plan_shared_code(
@@ -237,6 +235,22 @@ def build_plan(playbook: str, **kwargs: Any) -> dict[str, Any]:
         if not text:
             raise ValueError("shared-script requires --file or --text")
         return plan_shared_script(text=text, max_results=max_results)
+    if playbook == "all-posts":
+        from .x_all_posts import plan_all_posts
+
+        state_path = kwargs.get("state_path")
+        if state_path is None:
+            raise ValueError("all-posts requires --state")
+        return plan_all_posts(
+            username=kwargs.get("username"),
+            state_path=Path(state_path),
+            include_reposts=bool(kwargs.get("include_reposts")),
+            exclude_replies=bool(kwargs.get("exclude_replies")),
+            with_text=bool(kwargs.get("with_text")),
+            preflight=bool(kwargs.get("preflight")),
+            full=bool(kwargs.get("full")),
+            incremental=bool(kwargs.get("incremental")),
+        )
     return plan_cluster(
         query=kwargs.get("query") or "",
         start_time=kwargs.get("start_time") or "",

@@ -12,34 +12,36 @@ from linkcheck.x_plan import build_plan, resolve_plan, resolve_plan_files
 FIXTURES = Path(__file__).parent / "fixtures" / "x_mcp"
 
 
-def test_x_plan_own_posts_shape_and_from_placeholder():
+def test_x_plan_own_posts_link_only():
     plan = build_plan("own-posts", username="operator")
-    assert plan["call_count"] == 2
+    assert plan["call_count"] == 1
     assert plan["read_only"] is True
     assert plan["limits"]["max_results"] == 25
-    assert plan["limits"]["max_calls_per_plan"] == 30
-    assert len(plan["calls"]) == 2
-    step1, step2 = plan["calls"]
-    assert set(step1.keys()) == {"namespace", "tool", "arguments"}
-    assert step1["namespace"] == "x"
-    assert step1["tool"] == "get_users_by_username"
-    assert isinstance(step1["arguments"]["user.fields"], list)
-    assert step2["tool"] == "get_users_posts"
-    assert step2["arguments"]["id"] == {"$from": "step1.data.id"}
-    assert step2["arguments"]["max_results"] == 10  # default own-posts
-    assert isinstance(step2["arguments"]["post.fields"], list)
-    assert "entities" in step2["arguments"]["post.fields"]
-
-
-def test_x_plan_own_posts_max_results_flag():
-    plan = build_plan("own-posts", user_id="99", max_results=25)
-    assert plan["calls"][0]["arguments"]["max_results"] == 25
-    plan_hi = build_plan("own-posts", user_id="99", max_results=100)
-    assert plan_hi["calls"][0]["arguments"]["max_results"] == 25
+    call = plan["calls"][0]
+    assert set(call.keys()) == {"namespace", "tool", "arguments"}
+    assert call["tool"] == "search_posts_all"
+    assert call["arguments"]["query"] == "from:operator has:links -is:retweet"
+    assert call["arguments"]["post.fields"] == ["id", "created_at", "entities"]
+    assert call["arguments"]["max_results"] == 25
 
 
 def test_x_plan_resolve_substitutes_from():
-    plan = build_plan("own-posts", username="operator")
+    # resolve still works for any plan that uses $from (shared helpers)
+    plan = {
+        "playbook": "own-posts",
+        "calls": [
+            {
+                "namespace": "x",
+                "tool": "get_users_by_username",
+                "arguments": {"username": "operator"},
+            },
+            {
+                "namespace": "x",
+                "tool": "get_users_posts",
+                "arguments": {"id": {"$from": "step1.data.id"}, "max_results": 10},
+            },
+        ],
+    }
     outputs = {"step1": {"data": {"id": "99", "username": "operator"}}}
     resolved = resolve_plan(plan, outputs)
     assert resolved["calls"][1]["arguments"]["id"] == "99"
@@ -47,31 +49,29 @@ def test_x_plan_resolve_substitutes_from():
 
 
 def test_x_plan_resolve_accepts_fenced_raw_outputs_file(tmp_path):
-    plan = build_plan("own-posts", username="operator")
+    plan = {
+        "playbook": "test",
+        "calls": [
+            {"namespace": "x", "tool": "get_users_posts", "arguments": {"id": {"$from": "step1.data.id"}}},
+        ],
+    }
     plan_path = tmp_path / "plan.json"
     plan_path.write_text(json.dumps(plan), encoding="utf-8")
     step1 = FIXTURES / "step1_user_fenced.txt"
     resolved = resolve_plan_files(plan_path, [step1])
-    assert resolved["calls"][1]["arguments"]["id"] == "99"
-    # CLI path
+    assert resolved["calls"][0]["arguments"]["id"] == "99"
     assert (
-        main(
-            [
-                "x-plan",
-                "--resolve",
-                str(plan_path),
-                "--outputs",
-                str(step1),
-                "--json",
-            ]
-        )
-        == 0
+        main(["x-plan", "--resolve", str(plan_path), "--outputs", str(step1), "--json"]) == 0
     )
 
 
 def test_x_plan_resolve_and_ingest_xml_tag_wrappers(tmp_path):
-    """Real host wraps JSON in <tag …> … </tag> plus an 'X reads left' footer."""
-    plan = build_plan("own-posts", username="operator")
+    plan = {
+        "playbook": "test",
+        "calls": [
+            {"namespace": "x", "tool": "get_users_posts", "arguments": {"id": {"$from": "step1.data.id"}}},
+        ],
+    }
     plan_path = tmp_path / "plan.json"
     plan_path.write_text(json.dumps(plan), encoding="utf-8")
     step1 = FIXTURES / "step1_user_xml.txt"
@@ -85,13 +85,8 @@ def test_x_plan_resolve_and_ingest_xml_tag_wrappers(tmp_path):
     assert "<" not in body
 
     resolved = resolve_plan_files(plan_path, [step1])
-    assert resolved["calls"][1]["arguments"]["id"] == "99"
-    assert (
-        main(
-            ["x-plan", "--resolve", str(plan_path), "--outputs", str(step1), "--json"]
-        )
-        == 0
-    )
+    assert resolved["calls"][0]["arguments"]["id"] == "99"
+    assert main(["x-plan", "--resolve", str(plan_path), "--outputs", str(step1), "--json"]) == 0
 
     posts_raw = FIXTURES / "own_posts_xml.txt"
     posts, truncated = extract_posts(posts_raw.read_text(encoding="utf-8"))
@@ -152,7 +147,6 @@ def test_x_ingest_wrapped_fence_and_footer():
 def test_x_ingest_truncated_input_recovers_posts_no_traceback():
     raw = (FIXTURES / "posts_truncated.json").read_text(encoding="utf-8")
     assert "[... 36988 bytes from" in raw
-    # Must not raise
     posts, truncated = extract_posts(raw)
     assert truncated is True
     assert len(posts) >= 2
@@ -162,7 +156,6 @@ def test_x_ingest_truncated_input_recovers_posts_no_traceback():
     assert any(r.code == "input_truncated" for r in result.reasons)
     assert result.verdict in {"OK", "WARN", "BLOCK"}
     assert result.exit_code in (0, 1, 2)
-    # CLI must also not traceback
     code = main(["x-ingest", "--file", str(FIXTURES / "posts_truncated.json"), "--json"])
     assert code in (0, 1, 2)
 
@@ -176,7 +169,12 @@ def test_x_ingest_cluster_fixture_posting_time():
 def test_cli_x_plan_and_ingest(tmp_path):
     plan_path = tmp_path / "plan.json"
     out_path = tmp_path / "out.json"
-    plan = build_plan("own-posts", username="operator")
+    plan = {
+        "playbook": "test",
+        "calls": [
+            {"namespace": "x", "tool": "get_users_posts", "arguments": {"id": {"$from": "step1.data.id"}}},
+        ],
+    }
     plan_path.write_text(json.dumps(plan), encoding="utf-8")
     out_path.write_text(json.dumps({"step1": {"data": {"id": "99"}}}), encoding="utf-8")
     assert main(["x-plan", "--resolve", str(plan_path), "--outputs", str(out_path), "--json"]) == 0

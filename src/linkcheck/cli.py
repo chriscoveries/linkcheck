@@ -93,7 +93,7 @@ def build_parser() -> argparse.ArgumentParser:
     xp.add_argument(
         "playbook",
         nargs="?",
-        choices=["own-posts", "shared-code", "shared-script", "cluster"],
+        choices=["own-posts", "shared-code", "shared-script", "cluster", "all-posts"],
         help="X MCP playbook id",
     )
     xp.add_argument(
@@ -110,12 +110,47 @@ def build_parser() -> argparse.ArgumentParser:
             "(step1.txt …) and/or a {step1:…} map; fences/footers stripped like x-ingest"
         ),
     )
-    xp.add_argument("--username", help="Account username (own-posts)")
-    xp.add_argument("--user-id", help="Numeric account id (own-posts)")
+    xp.add_argument("--username", help="Account username (own-posts / all-posts)")
+    xp.add_argument("--user-id", help="Numeric account id (legacy)")
+    xp.add_argument(
+        "--state",
+        metavar="STATE.json",
+        help="Resumable state file (required for all-posts)",
+    )
+    xp.add_argument(
+        "--include-reposts",
+        action="store_true",
+        help="Drop -is:retweet from the link query (own-posts / all-posts)",
+    )
+    xp.add_argument(
+        "--exclude-replies",
+        action="store_true",
+        help="Add -is:reply to the link query (own-posts / all-posts)",
+    )
+    xp.add_argument(
+        "--with-text",
+        action="store_true",
+        help="Include post text field (needed for shared-script); default entities only",
+    )
+    xp.add_argument(
+        "--preflight",
+        action="store_true",
+        help="Emit get_posts_counts_recent first to estimate reads (own-posts / all-posts)",
+    )
+    xp.add_argument(
+        "--full",
+        action="store_true",
+        help="all-posts: force a fresh full scan",
+    )
+    xp.add_argument(
+        "--incremental",
+        action="store_true",
+        help="all-posts: after a completed scan, read only new link posts (since_id)",
+    )
     xp.add_argument(
         "--max-results",
         type=int,
-        help="max_results per call (default 10 for own-posts, 25 otherwise; cap 25)",
+        help="max_results for non-link playbooks (link scans always use 25)",
     )
     xp.add_argument("--text", "-t", help="Draft text (shared-code / shared-script)")
     xp.add_argument("--file", "-f", help="Read draft text from a file")
@@ -135,6 +170,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Parse raw X MCP tool JSON and return the usual check verdict",
     )
     xi.add_argument("--file", "-f", required=True, help="Raw MCP tool output JSON file")
+    xi.add_argument(
+        "--append",
+        metavar="STATE.json",
+        help="Accumulate into all-posts state (dedupe by id, update cursor)",
+    )
     xi.add_argument("--draft", help="Optional draft text file to compare against ingested posts")
     xi.add_argument("--json", action="store_true", help="Emit JSON")
     xi.add_argument(
@@ -251,8 +291,15 @@ def _cmd_x_plan(args: argparse.Namespace) -> int:
                 since_id=args.since_id,
                 until_id=args.until_id,
                 max_results=args.max_results,
+                state_path=args.state,
+                include_reposts=args.include_reposts,
+                exclude_replies=args.exclude_replies,
+                with_text=args.with_text,
+                preflight=args.preflight,
+                full=args.full,
+                incremental=args.incremental,
             )
-        except (ValueError, KeyError) as exc:
+        except (ValueError, KeyError, OSError) as exc:
             print(str(exc), file=sys.stderr)
             return 1
 
@@ -270,6 +317,29 @@ def _cmd_x_plan(args: argparse.Namespace) -> int:
 def _cmd_x_ingest(args: argparse.Namespace) -> int:
     from .models import CheckResult, Finding
     from .x_ingest import extract_posts, ingest_to_dict, run_ingest
+
+    if args.append:
+        from .x_all_posts import append_page
+
+        try:
+            raw = Path(args.file).read_text(encoding="utf-8")
+            body = append_page(raw, Path(args.append), offline=not args.online)
+        except Exception as exc:  # noqa: BLE001
+            body = {
+                "playbook": "all-posts",
+                "done": False,
+                "verdict": "WARN",
+                "exit_code": 1,
+                "error": str(exc),
+            }
+        if args.json:
+            print(json.dumps(body, separators=(",", ":"), sort_keys=False))
+        else:
+            print(
+                f"all-posts done={body.get('done')} added={body.get('added')} "
+                f"posts={body.get('post_count')} verdict={body.get('verdict')}"
+            )
+        return int(body.get("exit_code") or 0)
 
     try:
         raw = Path(args.file).read_text(encoding="utf-8")

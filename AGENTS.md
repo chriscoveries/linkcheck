@@ -29,7 +29,9 @@ Playbook files are also in `playbooks/`.
 
 ## x-loop
 
-`linkcheck x-plan … --json` → CallDynamicTool each `{namespace,tool,arguments}` → **save each raw tool result to a file** (do not paste or read it inline) → resolve `{$from}` with `x-plan --resolve plan.json --outputs step1.txt … --json` (fenced raw files OK) → `linkcheck x-ingest --file … --json` → act on exit `0/1/2`. Default own-posts `max_results` is 10 (`--max-results` to raise, cap 25).
+`linkcheck x-plan … --json` → CallDynamicTool each `{namespace,tool,arguments}` → **save each raw tool result to a file** (do not paste or read it inline) → resolve `{$from}` with `x-plan --resolve plan.json --outputs step1.txt … --json` → `linkcheck x-ingest --file … --json` → act on exit `0/1/2`.
+
+Link scans (`own-posts`, `all-posts`) use `from:<user> has:links -is:retweet`, `post.fields=["id","created_at","entities"]`, `max_results=25`. Read math: **ceil(posts_with_links / 25) = reads**. Full history: `x-plan all-posts --username U --state state.json` → call → `x-ingest --append state.json` until `done`; later `--incremental` for `since_id` only.
 
 ## Decisions
 
