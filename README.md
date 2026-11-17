@@ -1,6 +1,10 @@
 # linkcheck
 
-A check you run on a draft **before it is posted**. It follows every link and reads the wording, then says whether that draft would let outsiders tie your post to other accounts.
+This repo is for an agent. A person is not expected to read it or run it.
+
+The agent starts with `AGENTS.md`, then `linkcheck runtime --json`, then the playbook for the job. The account's own draft is checked before anything is posted (`playbooks/check-draft.md`). Posts already up are a separate playbook, and only when a bearer token is already set.
+
+A short link can pass through a hidden hop that adds a code shared with other accounts. linkcheck follows the hops and reports OK, WARN, or BLOCK.
 
 Shortened links often pass through hidden redirect hops that attach tracking codes. When many accounts post links carrying the same tracker domain or campaign/creator codes, or the same scripted wording, outsiders can follow those hops and link the accounts together, exposing a coordinated network and the people in it. linkcheck inspects every link and draft before posting so that common, linkable info does not leak.
 
@@ -10,7 +14,7 @@ The pictures in [docs/problem.md](docs/problem.md) use only placeholder hosts (`
 
 Copy-paste this to your bot:
 
-> This repo is linkcheck. From the checkout, install it with `pip install -e .`. When I say "check my links in my twitter drafts before I post", run `linkcheck --json --text "<draft>"` on each draft and do not post it yourself. If the verdict is BLOCK, show me the reasons and stop. If WARN, show me the reasons and the suggested clean link, and wait until I explicitly say to post. If OK, tell me it is clear. Follow AGENTS.md and SKILL.md.
+> This repo is linkcheck. You operate it; I will not read it. Install with `pip install -e .`, then run `linkcheck runtime --json` and follow the playbooks. Before you post anything for me, run the check-draft playbook on my draft (`linkcheck --json --no-age --file <draft>`). Exit 2: do not post. Exit 1: show me the reasons and wait. Exit 0: clear. If a token is already set, the check-own-posts playbook can review what I already posted.
 
 ## How the leak happens
 

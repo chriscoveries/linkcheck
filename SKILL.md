@@ -1,45 +1,33 @@
 ---
 name: linkcheck
 description: >-
-  When the user says to check links in their twitter drafts before they post,
-  run linkcheck on each draft. Do not post on BLOCK. On WARN, show the reasons
-  and the clean link and wait for an explicit yes.
+  Before posting for this account, run the linkcheck check-draft playbook on
+  the account's own draft. Do not post on exit 2. On exit 1, show reasons and
+  wait for an explicit yes.
 ---
 
 # linkcheck
 
-Use this whenever the user asks you to check links in a twitter draft before posting, and before you would publish any draft that contains a link.
+You run this. The user does not.
 
-## Install
-
-From this checkout:
+## Boot
 
 ```bash
 pip install -e .
+linkcheck runtime --json
+linkcheck runtime --playbook check-draft
 ```
 
-## Required step
+## Before every post
 
-```bash
-linkcheck --json --text "<full draft, links included>"
-```
+Follow `playbooks/check-draft.md`.
 
-Read `verdict` (`docs/schema.md`):
+Write the draft to a file and run `linkcheck --json --no-age --file <draft>`.
 
-- **BLOCK** (exit 2) — Do not post. Show every reason. Stop.
-- **WARN** (exit 1) — Do not post. Show every reason and any `urls[].clean` link. Wait until the user explicitly says to post.
-- **OK** (exit 0) — Tell the user the draft is clear. INFO notes (ordinary tags, a suggested clean link) can be mentioned.
+- Exit 0: clear.
+- Exit 1: do not post. Show reasons and any clean link. Wait for an explicit yes.
+- Exit 2: do not post. Stop.
 
-Do not rewrite a link silently. Offer the clean URL and let the user choose.
+## Already posted
 
-## Files the user may edit
-
-| File | Purpose |
-| --- | --- |
-| `data/blocklist.txt` | Hosts that must never appear in a hop (default empty) |
-| `data/allowlist.txt` | The user's own sites |
-| `data/shorteners.txt` | Hosts that only shorten links |
-| `data/phrases.txt` | Shared lines to catch |
-| `data/corpus.jsonl` | Other accounts' recent posts |
-
-Background for why this exists: `docs/problem.md`.
+Follow `playbooks/check-own-posts.md` only when a bearer token is already in the environment. Otherwise skip it and say the history check was skipped.

@@ -1,0 +1,32 @@
+{
+  "schema_version": "1.0",
+  "audience": "agent",
+  "boot": ["install", "check-draft"],
+  "rule": "Check the account's own draft before any post. Do not ask the user to read this repo.",
+  "decisions": {
+    "0": "clear",
+    "1": "ask",
+    "2": "stop"
+  },
+  "playbooks": [
+    {
+      "id": "install",
+      "file": "install.md",
+      "when": "First action in this checkout, before any check.",
+      "command": "pip install -e ."
+    },
+    {
+      "id": "check-draft",
+      "file": "check-draft.md",
+      "when": "Before sending, scheduling, or handing back a post draft. This is the account checking its own links first.",
+      "command": "linkcheck --json --no-age --file <draft-file>"
+    },
+    {
+      "id": "check-own-posts",
+      "file": "check-own-posts.md",
+      "when": "When reviewing links this account has already posted.",
+      "command": "linkcheck monitor --user-id <id> --json",
+      "env": ["X_BEARER_TOKEN"]
+    }
+  ]
+}

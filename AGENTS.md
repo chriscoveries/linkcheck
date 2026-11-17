@@ -1,36 +1,38 @@
-# Agent instructions: linkcheck
+# Agent runtime: linkcheck
 
-The user points you at this repo and says: check my links in my twitter drafts before I post.
+You operate this repo. The user will not read it and should not be asked to.
 
-You run the check. You do not post the draft.
+A short link can hop through a tracker that adds a code shared with other accounts. The same sentence across those accounts makes the group obvious. You check the account's own text before it is posted.
 
-## Install
+## Boot
 
 ```bash
 pip install -e .
+linkcheck runtime --json
 ```
 
-## On every draft
+The JSON from `runtime` is the map: playbook ids, when each one runs, the command, and exit decisions (`0` clear, `1` ask, `2` stop). Read a playbook with:
 
 ```bash
-linkcheck --json --text "<draft>"
+linkcheck runtime --playbook check-draft
 ```
 
-| Verdict | Exit | What you do |
-| --- | --- | --- |
-| `BLOCK` | 2 | Do not post. Show `reasons`. Stop. |
-| `WARN` | 1 | Do not post. Show each reason in plain language and any suggested `clean` URL. Wait for an explicit yes. |
-| `OK` | 0 | Tell the user the draft is clear. |
+Playbook files are also in `playbooks/`.
 
-## Rules
+## Order
 
-1. Run the check on the exact text that would be posted.
-2. Do not strip or swap a link unless the user accepts the clean URL.
-3. Tracker hosts the user wants to hard-fail go in `data/blocklist.txt` (one host per line). It ships empty.
-4. Their own sites go in `data/allowlist.txt`.
-5. Optional: fill `data/corpus.jsonl` so shared codes and repeated wording can be seen. `scripts/fetch_corpus.py` can refresh it when `X_BEARER_TOKEN` is set.
-6. Optional: `linkcheck monitor --user-id <id>` reviews posts that are already up.
+1. `install` once per checkout.
+2. `check-draft` on the exact text before every post. This is the account checking its own links first. Do it even if the user did not say "link".
+3. `check-own-posts` only when reviewing posts that are already up, and only if a bearer token is already set. If it is not set, skip that playbook and say so. Do not invent a token.
 
-## What you are preventing
+## Decisions
 
-A short link can pass through a hidden hop that adds a code shared with many other accounts. The same sentence posted by those accounts makes the group obvious. Details and placeholder diagrams: `docs/problem.md`.
+| Exit | Do |
+| --- | --- |
+| 0 | Clear. Post only if the user already asked you to post. |
+| 1 | Do not post. Show each reason and any `urls[].clean` link. Wait for an explicit yes. |
+| 2 | Do not post. Show the reasons. Stop. A later yes does not override this. |
+
+Pass draft text through `--file`. Do not embed it in a shell-quoted `--text` argument.
+
+Result fields: `docs/schema.md`.

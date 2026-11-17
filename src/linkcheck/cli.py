@@ -52,9 +52,15 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--no-age", action="store_true", help="Skip RDAP/WHOIS domain-age checks")
 
     sub = p.add_subparsers(dest="command")
-    mon = sub.add_parser("monitor", help="Poll own recent posts via X API v2 (optional)")
-    mon.add_argument("--user-id", required=True, help="X user id to monitor")
+
+    rt = sub.add_parser("runtime", help="Print the agent playbook index")
+    rt.add_argument("--json", action="store_true", help="Emit the runtime index as JSON")
+    rt.add_argument("--playbook", help="Print one playbook by id")
+
+    mon = sub.add_parser("monitor", help="Check this account's already-posted links")
+    mon.add_argument("--user-id", required=True, help="Numeric account id")
     mon.add_argument("--max-results", type=int, default=10)
+    mon.add_argument("--json", action="store_true", help="Emit JSON")
     return p
 
 
@@ -74,9 +80,38 @@ def _cmd_monitor(args: argparse.Namespace) -> int:
     return findings.get("exit_code", 0)
 
 
+def _cmd_runtime(args: argparse.Namespace) -> int:
+    from pydantic import ValidationError
+
+    from .runtime import format_runtime_error, playbook_text, runtime_payload
+
+    try:
+        if args.playbook:
+            text = playbook_text(args.playbook)
+            sys.stdout.write(text if text.endswith("\n") else text + "\n")
+            return 0
+        payload = runtime_payload()
+    except (OSError, ValueError, KeyError, ValidationError) as exc:
+        print(format_runtime_error(exc), file=sys.stderr)
+        return 1
+
+    if args.json:
+        print(json.dumps(payload, indent=2))
+    else:
+        print(f"linkcheck runtime {payload['version']}")
+        print(payload["rule"])
+        print("Boot:", ", ".join(payload["boot"]))
+        for item in payload["playbooks"]:
+            print(f"- {item['id']}: {item['command']}")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
+
+    if args.command == "runtime":
+        return _cmd_runtime(args)
 
     if args.command == "monitor":
         return _cmd_monitor(args)
