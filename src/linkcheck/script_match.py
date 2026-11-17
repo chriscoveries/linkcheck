@@ -16,6 +16,7 @@ _TOKEN_RE = re.compile(r"[a-z0-9]+", re.I)
 DEFAULT_THRESHOLD = 0.85
 DEFAULT_MIN_ACCOUNTS = 3
 DEFAULT_LOOKBACK_DAYS = 14
+DEFAULT_CLUSTER_HOURS = 168  # 7 days: similar posts bunched in a short window
 
 
 def normalize_text(text: str) -> str:
@@ -115,6 +116,30 @@ def match_phrases(text: str, phrases: list[str]) -> list[str]:
     return [p for p in phrases if normalize_text(p) and normalize_text(p) in norm]
 
 
+def _cluster_timestamps(
+    times: list[datetime],
+    *,
+    min_accounts: int,
+    cluster_hours: int,
+) -> tuple[bool, list[str]]:
+    """True when ≥ min_accounts timestamps fall inside a cluster_hours window."""
+    if len(times) < min_accounts:
+        return False, []
+    ordered = sorted(times)
+    window = timedelta(hours=cluster_hours)
+    best: list[datetime] = []
+    left = 0
+    for right, t in enumerate(ordered):
+        while t - ordered[left] > window:
+            left += 1
+        span = ordered[left : right + 1]
+        if len(span) > len(best):
+            best = span
+    if len(best) >= min_accounts:
+        return True, [t.isoformat() for t in best[:20]]
+    return False, []
+
+
 def compare_to_corpus(
     draft: str,
     corpus: list[dict],
@@ -122,6 +147,8 @@ def compare_to_corpus(
     draft_urls: list[str] | None = None,
     threshold: float = DEFAULT_THRESHOLD,
     min_accounts: int = DEFAULT_MIN_ACCOUNTS,
+    cluster_hours: int = DEFAULT_CLUSTER_HOURS,
+    now: datetime | None = None,
 ) -> ScriptMatchReport:
     report = ScriptMatchReport(checked=True)
     if not corpus:
@@ -141,10 +168,12 @@ def compare_to_corpus(
     idf = {t: math.log((n_docs + 1) / (1 + c)) + 1.0 for t, c in df.items()}
 
     per_account: dict[str, float] = defaultdict(float)
+    best_row: dict[str, dict] = {}
     for row, tf in zip(corpus, docs_tf):
         sim = max(jaccard(q_sh, shingles(row["text"])), tfidf_cosine(q_tf, tf, idf))
         if sim > per_account[row["account"]]:
             per_account[row["account"]] = sim
+            best_row[row["account"]] = row
 
     matched = sorted(
         ((a, s) for a, s in per_account.items() if s >= threshold),
@@ -168,6 +197,43 @@ def compare_to_corpus(
                     "threshold": threshold,
                     "accounts": report.matched_accounts[:20],
                     "max_similarity": round(report.max_similarity, 4),
+                },
+            )
+        )
+
+    # Posting-time clustering among near-duplicate matches (+ draft = now)
+    matched_times: list[datetime] = []
+    for account, _sim in matched:
+        row = best_row.get(account) or {}
+        created = _parse_date(row.get("created_at"))
+        if created is not None:
+            matched_times.append(created)
+    draft_time = now or datetime.now(timezone.utc)
+    cluster_times = list(matched_times) + [draft_time]
+    clustered, sample = _cluster_timestamps(
+        cluster_times,
+        min_accounts=min_accounts + 1,  # draft + others, or enough peers alone
+        cluster_hours=cluster_hours,
+    )
+    # Also flag when enough peer posts alone cluster (without requiring draft)
+    peer_clustered, peer_sample = _cluster_timestamps(
+        matched_times,
+        min_accounts=min_accounts,
+        cluster_hours=cluster_hours,
+    )
+    if (clustered or peer_clustered) and len(matched) >= min_accounts:
+        report.findings.append(
+            Finding(
+                severity="WARN",
+                code="posting_time_cluster",
+                message=(
+                    f"Near-duplicate posts by {len(matched)} accounts cluster inside "
+                    f"a {cluster_hours}-hour window (coordination timing signal)"
+                ),
+                detail={
+                    "accounts": report.matched_accounts[:20],
+                    "cluster_hours": cluster_hours,
+                    "sample_timestamps": sample or peer_sample,
                 },
             )
         )
@@ -211,6 +277,7 @@ def run_script_checks(
     threshold: float = DEFAULT_THRESHOLD,
     min_accounts: int = DEFAULT_MIN_ACCOUNTS,
     lookback_days: int = DEFAULT_LOOKBACK_DAYS,
+    cluster_hours: int = DEFAULT_CLUSTER_HOURS,
 ) -> ScriptMatchReport:
     corpus = load_corpus(corpus_path, lookback_days=lookback_days)
     report = compare_to_corpus(
@@ -219,6 +286,7 @@ def run_script_checks(
         draft_urls=draft_urls,
         threshold=threshold,
         min_accounts=min_accounts,
+        cluster_hours=cluster_hours,
     )
     hits = match_phrases(draft, phrases)
     report.phrase_hits = hits

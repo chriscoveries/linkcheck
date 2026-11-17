@@ -40,6 +40,6 @@ Do not rewrite a link silently. Offer the clean URL and let the user choose.
 | `data/allowlist.txt` | The user's own sites |
 | `data/shorteners.txt` | Hosts that only shorten links |
 | `data/phrases.txt` | Shared lines to catch |
-| `data/corpus.jsonl` | Other accounts' recent posts |
+| `data/corpus.jsonl` | Other accounts' recent posts (codes, wording, timing) |
 
-Background for why this exists: `docs/problem.md`.
+Background for why this exists (anonymised case study): `docs/PROBLEM.md`.
