@@ -66,7 +66,7 @@ From a checkout of this repo:
 pip install -e ".[dev]"
 ```
 
-With credentials that can read the private repo:
+From the public repo:
 
 ```bash
 pip install "git+https://github.com/chriscoveries/linkcheck.git"

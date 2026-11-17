@@ -8,13 +8,13 @@ The pictures and the story of how the leak works are in [problem.md](problem.md)
 
 ## Install
 
-The repo is private. Install it from a checkout you can already read:
+The repo is public. From a checkout:
 
 ```bash
 pip install -e ".[dev]"
 ```
 
-Or, with credentials that can read the repo:
+Or directly:
 
 ```bash
 pip install "git+https://github.com/chriscoveries/linkcheck.git"

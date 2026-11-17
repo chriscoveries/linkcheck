@@ -22,8 +22,9 @@ Playbook files are also in `playbooks/`.
 ## Order
 
 1. `install` once per checkout.
-2. `check-draft` on the exact text before every post. This is the account checking its own links first. Do it even if the user did not say "link".
-3. `check-own-posts` only when reviewing posts that are already up, and only if a bearer token is already set. If it is not set, skip that playbook and say so. Do not invent a token.
+2. `scope` once. The checker will run on any text or any account id. Default is the operator's own draft and own posts. Do not collect other accounts.
+3. `check-draft` on the exact text before every post. Do it even if the user did not say "link".
+4. `check-own-posts` only for the operator's own already-posted items, and only if a bearer token is already set. If it is not set, skip that playbook and say so. Do not invent a token. Another account id only when the user names that one id and asks for it.
 
 ## Decisions
 

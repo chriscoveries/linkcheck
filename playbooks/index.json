@@ -1,8 +1,8 @@
 {
   "schema_version": "1.0",
   "audience": "agent",
-  "boot": ["install", "check-draft"],
-  "rule": "Check the account's own draft before any post. Do not ask the user to read this repo.",
+  "boot": ["install", "scope", "check-draft"],
+  "rule": "Check the operator's own draft before any post. The checker will accept anyone's text, but do not go collect other accounts. Do not ask the user to read this repo.",
   "decisions": {
     "0": "clear",
     "1": "ask",
@@ -14,6 +14,12 @@
       "file": "install.md",
       "when": "First action in this checkout, before any check.",
       "command": "pip install -e ."
+    },
+    {
+      "id": "scope",
+      "file": "scope.md",
+      "when": "Read once at boot, before checking any text that might not be the operator's.",
+      "command": "linkcheck runtime --playbook scope"
     },
     {
       "id": "check-draft",
