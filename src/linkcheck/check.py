@@ -194,6 +194,7 @@ def format_human(result: CheckResult) -> str:
             "shared_tracking_code",
             "script_near_duplicate",
             "script_phrase",
+            "posting_time_cluster",
             "young_domain",
         }
     ]

@@ -28,9 +28,9 @@ linkcheck --json --text "<draft>"
 2. Do not strip or swap a link unless the user accepts the clean URL.
 3. Tracker hosts the user wants to hard-fail go in `data/blocklist.txt` (one host per line). It ships empty.
 4. Their own sites go in `data/allowlist.txt`.
-5. Optional: fill `data/corpus.jsonl` so shared codes and repeated wording can be seen. `scripts/fetch_corpus.py` can refresh it when `X_BEARER_TOKEN` is set.
+5. Optional: fill `data/corpus.jsonl` so shared codes, repeated wording, and posting-time clusters can be seen. `scripts/fetch_corpus.py` can refresh it when `X_BEARER_TOKEN` is set.
 6. Optional: `linkcheck monitor --user-id <id>` reviews posts that are already up.
 
 ## What you are preventing
 
-A short link can pass through a hidden hop that adds a code shared with many other accounts. The same sentence posted by those accounts makes the group obvious. Details and placeholder diagrams: `docs/problem.md`.
+A short link can pass through a hidden hop that adds a code shared with many other accounts. The same sentence posted by those accounts in a tight time window makes the group obvious. Freshly registered redirect domains after a tracker is exposed are another signal. Anonymised case study and leak table: `docs/PROBLEM.md`.

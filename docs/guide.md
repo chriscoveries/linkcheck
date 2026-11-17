@@ -4,7 +4,7 @@ linkcheck reads a draft before it is posted. It pulls every link out of the text
 
 It does not decide whether a post is an advertisement. A clear verdict means "this draft is not carrying that kind of join key." It does not mean the page at the end of the link is trustworthy.
 
-The pictures and the story of how the leak works are in [problem.md](problem.md). The JSON a bot should parse is in [schema.md](schema.md). Worked command output is in [examples.md](examples.md).
+The pictures and the story of how the leak works are in [PROBLEM.md](PROBLEM.md) (`problem.md` redirects there). The JSON a bot should parse is in [schema.md](schema.md). Worked command output is in [examples.md](examples.md).
 
 ## Install
 
@@ -91,6 +91,7 @@ The chain stops after 10 hops, on a loop, or when a hop returns a page with no f
 | `script_phrase` | WARN | The draft contains a line from `data/phrases.txt`. |
 | `script_near_duplicate` | WARN | The wording is very close (similarity at least 0.85) to posts by 3 or more other accounts in the lookback window. |
 | `shared_tracking_code` | WARN | A code in this draft also appears on posts by 3 or more other accounts in the corpus. |
+| `posting_time_cluster` | WARN | Near-duplicate matches from 3+ accounts fall inside a short time window (default 168 hours). |
 
 Allowlisted hosts skip the intermediate-hop and age warnings. A blocklist hit still wins: if you put a host on both lists, treat the blocklist as the one that matters and do not list it in both.
 
