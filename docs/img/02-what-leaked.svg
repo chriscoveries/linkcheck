@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="360" viewBox="0 0 960 360" role="img" aria-labelledby="title desc">
+  <title id="title">What leaked across posts</title>
+  <desc id="desc">Six anonymised leak types that let outsiders group paid posts into one network.</desc>
+  <rect width="960" height="360" fill="#f7f5f0"/>
+  <text x="24" y="36" font-family="Georgia, serif" font-size="18" fill="#1c1917">What leaked (join keys)</text>
+  <text x="24" y="58" font-family="ui-sans-serif, system-ui, sans-serif" font-size="12" fill="#57534e">Generalised signals from a public-style investigation. Placeholders only.</text>
+
+  <g font-family="ui-sans-serif, system-ui, sans-serif" font-size="12">
+    <rect x="24" y="80" width="290" height="110" rx="8" fill="#fff" stroke="#c2410c"/>
+    <text x="40" y="108" font-weight="700" fill="#c2410c">Shared tracker hop</text>
+    <text x="40" y="132" fill="#44403c">tracker.example on many</text>
+    <text x="40" y="150" fill="#44403c">Creator A / B / C short links</text>
+    <text x="40" y="172" fill="#78716c">Infrastructure fingerprint</text>
+
+    <rect x="334" y="80" width="290" height="110" rx="8" fill="#fff" stroke="#c2410c"/>
+    <text x="350" y="108" font-weight="700" fill="#c2410c">IDs in URL params</text>
+    <text x="350" y="132" fill="#44403c">utm_campaign=a1b2c3d4</text>
+    <text x="350" y="150" fill="#44403c">cid / creator / click tokens</text>
+    <text x="350" y="172" fill="#78716c">Opaque codes = identity</text>
+
+    <rect x="644" y="80" width="290" height="110" rx="8" fill="#fff" stroke="#c2410c"/>
+    <text x="660" y="108" font-weight="700" fill="#c2410c">New-domain age</text>
+    <text x="660" y="132" fill="#44403c">newtrack.example appears</text>
+    <text x="660" y="150" fill="#44403c">~1 hour after outreach</text>
+    <text x="660" y="172" fill="#78716c">Young hop = cover-up signal</text>
+
+    <rect x="24" y="210" width="290" height="110" rx="8" fill="#fff" stroke="#1d4ed8"/>
+    <text x="40" y="238" font-weight="700" fill="#1d4ed8">Shared codes</text>
+    <text x="40" y="262" fill="#44403c">Same code family across</text>
+    <text x="40" y="280" fill="#44403c">dozens of creators</text>
+    <text x="40" y="302" fill="#78716c">Graph edge between accounts</text>
+
+    <rect x="334" y="210" width="290" height="110" rx="8" fill="#fff" stroke="#1d4ed8"/>
+    <text x="350" y="238" font-weight="700" fill="#1d4ed8">Scripted wording</text>
+    <text x="350" y="262" fill="#44403c">Near-identical sentence</text>
+    <text x="350" y="280" fill="#44403c">light edits only</text>
+    <text x="350" y="302" fill="#78716c">Second join key</text>
+
+    <rect x="644" y="210" width="290" height="110" rx="8" fill="#fff" stroke="#1d4ed8"/>
+    <text x="660" y="238" font-weight="700" fill="#1d4ed8">Posting-time cluster</text>
+    <text x="660" y="262" fill="#44403c">Burst within ~2 weeks</text>
+    <text x="660" y="280" fill="#44403c">after a policy event</text>
+    <text x="660" y="302" fill="#78716c">Coordination, not chance</text>
+  </g>
+</svg>
