@@ -250,6 +250,7 @@ def build_plan(playbook: str, **kwargs: Any) -> dict[str, Any]:
             preflight=bool(kwargs.get("preflight")),
             full=bool(kwargs.get("full")),
             incremental=bool(kwargs.get("incremental")),
+            max_results=max_results,
         )
     return plan_cluster(
         query=kwargs.get("query") or "",

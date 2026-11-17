@@ -111,11 +111,15 @@ def link_search_args(
     since_id: str | None = None,
     until_id: str | None = None,
     with_text: bool = False,
+    max_results: int | None = None,
 ) -> dict[str, Any]:
-    """Minimal search_posts_all args: no expansions, no user.fields, max_results=25."""
+    """Minimal search_posts_all args: no expansions, no user.fields."""
+    # search_posts_all minimum is 10; cap at 25
+    n = MAX_RESULTS if max_results is None else int(max_results)
+    n = max(10, min(n, MAX_RESULTS))
     args: dict[str, Any] = {
         "query": query,
-        "max_results": MAX_RESULTS,
+        "max_results": n,
         "sort_order": "recency",
         "post.fields": list(LINK_POST_FIELDS_WITH_TEXT if with_text else LINK_POST_FIELDS),
     }

@@ -1,0 +1,38 @@
+```untrusted-data
+{
+  "data": [
+    {
+      "id": "2002",
+      "created_at": "2024-07-02T12:00:00.000Z",
+      "entities": {
+        "urls": [
+          {
+            "url": "https://t.co/aaa",
+            "expanded_url": "https://news.example/a?cid=deadbeef",
+            "display_url": "news.example/a"
+          }
+        ]
+      }
+    },
+    {
+      "id": "2001",
+      "created_at": "2024-07-01T12:00:00.000Z",
+      "entities": {
+        "urls": [
+          {
+            "url": "https://t.co/bbb",
+            "expanded_url": "https://news.example/b?ref=creator123",
+            "display_url": "news.example/b"
+          }
+        ]
+      }
+    },
+    {
+      "id": "2000",
+      "created_at": "2024-06-30T12:00:00.000Z",
+      "entities": {
+        "urls": [
+          {
+            "url": "https://t.co/ccc",
+            "expanded_url": "https://news.example/c
+[... 6124 bytes from tool output truncated by host]

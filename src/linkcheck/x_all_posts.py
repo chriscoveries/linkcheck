@@ -23,6 +23,7 @@ from .x_api import (
 from .x_ingest import _is_tco, extract_posts, strip_wrappers
 
 STATE_VERSION = 1
+MIN_PAGE_SIZE = 10
 
 
 def _now() -> datetime:
@@ -52,8 +53,10 @@ def empty_state(
     include_reposts: bool = False,
     exclude_replies: bool = False,
     with_text: bool = False,
+    max_results: int = MAX_RESULTS,
 ) -> dict[str, Any]:
     user = username.lstrip("@")
+    n = max(MIN_PAGE_SIZE, min(int(max_results), MAX_RESULTS))
     return {
         "schema_version": STATE_VERSION,
         "playbook": "all-posts",
@@ -64,11 +67,15 @@ def empty_state(
         "include_reposts": include_reposts,
         "exclude_replies": exclude_replies,
         "with_text": with_text,
+        "max_results": n,
         "done": False,
-        "mode": "full",  # full | incremental
+        "mode": "full",
         "next_token": None,
+        "until_id": None,
+        "page_incomplete": False,
+        "saw_truncation": False,
         "newest_id": None,
-        "checkpoint_newest_id": None,  # high-water from prior completed full/incremental
+        "checkpoint_newest_id": None,
         "call_timestamps": [],
         "post_ids": [],
         "posts": {},
@@ -93,7 +100,6 @@ def load_state(path: Path, *, username: str | None = None) -> dict[str, Any]:
 
 
 def save_state(path: Path, state: dict[str, Any]) -> None:
-    # Drop ephemeral keys
     state.pop("_now", None)
     state.pop("_minute_ago", None)
     path.write_text(
@@ -139,10 +145,10 @@ def record_call(state: dict[str, Any], when: datetime | None = None) -> None:
     _prune_timestamps(state, when)
 
 
-def estimate_reads(post_count: int) -> dict[str, int]:
-    """posts_with_links / 25 = reads (pages)."""
-    pages = (max(0, int(post_count)) + MAX_RESULTS - 1) // MAX_RESULTS if post_count else 0
-    return {"posts_with_links": int(post_count), "reads": pages, "page_size": MAX_RESULTS}
+def estimate_reads(post_count: int, page_size: int = MAX_RESULTS) -> dict[str, int]:
+    size = max(MIN_PAGE_SIZE, int(page_size) or MAX_RESULTS)
+    pages = (max(0, int(post_count)) + size - 1) // size if post_count else 0
+    return {"posts_with_links": int(post_count), "reads": pages, "page_size": size}
 
 
 def plan_all_posts(
@@ -155,13 +161,13 @@ def plan_all_posts(
     preflight: bool = False,
     full: bool = False,
     incremental: bool = False,
+    max_results: int | None = None,
 ) -> dict[str, Any]:
     state = load_state(state_path, username=username)
     user = (username or state.get("username") or "").lstrip("@")
     if not user:
         raise ValueError("all-posts requires --username")
 
-    # Refresh query flags on each plan (flags are source of truth for new scans)
     query = link_account_query(
         user, include_reposts=include_reposts, exclude_replies=exclude_replies
     )
@@ -170,6 +176,11 @@ def plan_all_posts(
     state["include_reposts"] = include_reposts
     state["exclude_replies"] = exclude_replies
     state["with_text"] = with_text
+    if max_results is not None and not state.get("page_incomplete"):
+        # Don't override an active post-truncation halved size unless explicit and not incomplete
+        state["max_results"] = max(MIN_PAGE_SIZE, min(int(max_results), MAX_RESULTS))
+    elif "max_results" not in state:
+        state["max_results"] = MAX_RESULTS
 
     if full:
         state = empty_state(
@@ -177,6 +188,7 @@ def plan_all_posts(
             include_reposts=include_reposts,
             exclude_replies=exclude_replies,
             with_text=with_text,
+            max_results=max_results if max_results is not None else MAX_RESULTS,
         )
         state["mode"] = "full"
     elif (
@@ -184,15 +196,17 @@ def plan_all_posts(
         and state.get("done")
         and state.get("newest_id")
         and not state.get("next_token")
+        and not state.get("page_incomplete")
     ):
-        # Later run: only new link posts since last newest_id
         state["done"] = False
         state["mode"] = "incremental"
         state["checkpoint_newest_id"] = state["newest_id"]
         state["next_token"] = None
+        state["until_id"] = None
+        state["page_incomplete"] = False
         state["pages"] = 0
         state["report"] = None
-    elif state.get("done"):
+    elif state.get("done") and not state.get("page_incomplete"):
         report = state.get("report") or build_report(state)
         save_state(state_path, state)
         return finalize_plan(
@@ -203,8 +217,14 @@ def plan_all_posts(
             report=report,
             post_count=len(state.get("post_ids") or []),
             query=query,
-            read_estimate=estimate_reads(len(state.get("post_ids") or [])),
+            read_estimate=estimate_reads(
+                len(state.get("post_ids") or []), state.get("max_results") or MAX_RESULTS
+            ),
         )
+
+    # Never treat incomplete/truncated work as finished
+    if state.get("page_incomplete") or state.get("saw_truncation"):
+        state["done"] = False
 
     wait = rate_limit_wait(state)
     if wait is not None:
@@ -219,8 +239,13 @@ def plan_all_posts(
         )
 
     calls: list[dict[str, Any]] = []
-    # Preflight only on the first page of a run
-    if preflight and int(state.get("pages") or 0) == 0 and not state.get("next_token"):
+    if (
+        preflight
+        and int(state.get("pages") or 0) == 0
+        and not state.get("next_token")
+        and not state.get("until_id")
+        and not state.get("page_incomplete")
+    ):
         calls.append(
             mcp_call(
                 "get_posts_counts_recent",
@@ -228,24 +253,31 @@ def plan_all_posts(
             )
         )
 
+    page_size = max(MIN_PAGE_SIZE, min(int(state.get("max_results") or MAX_RESULTS), MAX_RESULTS))
+    next_token = state.get("next_token") or None
+    until_id = None if next_token else (state.get("until_id") or None)
     since_id = None
-    if state.get("mode") == "incremental" and state.get("checkpoint_newest_id") and not state.get(
-        "next_token"
+    if (
+        state.get("mode") == "incremental"
+        and state.get("checkpoint_newest_id")
+        and not next_token
+        and not until_id
     ):
         since_id = str(state["checkpoint_newest_id"])
 
     args = link_search_args(
         query,
-        next_token=state.get("next_token") or None,
-        since_id=since_id if not state.get("next_token") else None,
+        next_token=next_token,
+        since_id=since_id,
+        until_id=str(until_id) if until_id else None,
         with_text=with_text,
+        max_results=page_size,
     )
     calls.append(mcp_call("search_posts_all", args))
 
-    # Rough estimate note: without preflight result we only know page size
     read_estimate = {
-        "page_size": MAX_RESULTS,
-        "formula": "ceil(posts_with_links / 25) = reads",
+        "page_size": page_size,
+        "formula": "ceil(posts_with_links / page_size) = reads",
         "this_plan_reads": len([c for c in calls if c["tool"] == "search_posts_all"]),
     }
 
@@ -260,23 +292,31 @@ def plan_all_posts(
         query=query,
         mode=state.get("mode") or "full",
         read_estimate=read_estimate,
+        page_incomplete=bool(state.get("page_incomplete")),
     )
 
 
-def _meta_from_raw(raw: str) -> dict[str, Any]:
+def _parse_payload(raw: str) -> tuple[dict[str, Any] | None, dict[str, Any], bool]:
+    """Return (root_or_None, meta, complete). complete means full JSON parse succeeded."""
     text = strip_wrappers(raw)
     try:
         obj = json.loads(text)
+        if isinstance(obj, dict):
+            meta = obj.get("meta") if isinstance(obj.get("meta"), dict) else {}
+            return obj, meta, True
+        return None, {}, True
     except json.JSONDecodeError:
         decoder = json.JSONDecoder()
         try:
             obj, _ = decoder.raw_decode(text)
+            if isinstance(obj, dict):
+                # raw_decode without consuming all input ⇒ incomplete wrapper/body
+                meta = obj.get("meta") if isinstance(obj.get("meta"), dict) else {}
+                # If trailing junk remains after decode, treat as incomplete
+                return obj, meta, False
         except json.JSONDecodeError:
-            return {}
-    if not isinstance(obj, dict):
-        return {}
-    meta = obj.get("meta") or {}
-    return meta if isinstance(meta, dict) else {}
+            pass
+        return None, {}, False
 
 
 def _slim_post(post: dict[str, Any]) -> dict[str, Any]:
@@ -287,6 +327,10 @@ def _slim_post(post: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _halve_page_size(current: int) -> int:
+    return max(MIN_PAGE_SIZE, int(current) // 2)
+
+
 def append_page(
     raw: str,
     state_path: Path,
@@ -294,9 +338,9 @@ def append_page(
     offline: bool = True,
 ) -> dict[str, Any]:
     """Merge one search_posts_all page into state. Idempotent by post id."""
-    del offline  # reserved; link checks are local on expanded urls
+    del offline
     state = load_state(state_path)
-    if state.get("done") and not state.get("next_token"):
+    if state.get("done") and not state.get("page_incomplete") and not state.get("next_token"):
         report = state.get("report") or build_report(state)
         return {
             "playbook": "all-posts",
@@ -309,8 +353,12 @@ def append_page(
         }
 
     record_call(state)
-    posts, truncated = extract_posts(raw)
-    meta = _meta_from_raw(raw)
+    posts, truncated_extract = extract_posts(raw)
+    root, meta, complete = _parse_payload(raw)
+    truncated = truncated_extract or (not complete)
+    # Missing meta on a truncated body is the critical host-cutoff case
+    if truncated:
+        meta = meta if meta else {}
 
     posts_map: dict[str, Any] = dict(state.get("posts") or {})
     ids: list[str] = list(state.get("post_ids") or [])
@@ -334,14 +382,8 @@ def append_page(
     state["post_ids"] = ids
     state["pages"] = int(state.get("pages") or 0) + 1
 
-    next_token = meta.get("next_token")
-    if isinstance(next_token, str) and next_token.strip():
-        state["next_token"] = next_token.strip()
-    else:
-        state["next_token"] = None
-
-    # Track newest snowflake id seen
-    all_numeric = []
+    # Newest id
+    all_numeric: list[int] = []
     for pid in ids:
         try:
             all_numeric.append(int(pid))
@@ -350,16 +392,49 @@ def append_page(
     if all_numeric:
         state["newest_id"] = str(max(all_numeric))
 
-    page_count = len(posts)
-    if state.get("next_token"):
+    result_count = meta.get("result_count")
+    next_token = meta.get("next_token")
+    has_meta = bool(meta) or (
+        complete and isinstance(root, dict) and "meta" in root
+    )
+
+    if truncated:
+        # Never finish on truncated input — continue via until_id + smaller page
         state["done"] = False
-    elif page_count == 0 or page_count < MAX_RESULTS:
-        state["done"] = True
-    elif added == 0:
-        state["done"] = True
+        state["page_incomplete"] = True
+        state["saw_truncation"] = True
+        state["next_token"] = None
+        cur = int(state.get("max_results") or MAX_RESULTS)
+        state["max_results"] = _halve_page_size(cur)
+        page_numeric = []
+        for pid in page_ids:
+            try:
+                page_numeric.append(int(pid))
+            except ValueError:
+                continue
+        if page_numeric:
+            state["until_id"] = str(min(page_numeric) - 1)
+        # else: keep prior until_id / retry same window at smaller size
     else:
-        # Full page without next_token — stop (next_token-only paging)
-        state["done"] = True
+        state["page_incomplete"] = False
+        if isinstance(next_token, str) and next_token.strip():
+            state["next_token"] = next_token.strip()
+            state["until_id"] = None
+            state["done"] = False
+        elif result_count == 0 or (has_meta and not next_token):
+            # Complete response: meta present with no next_token, or empty result
+            state["next_token"] = None
+            state["until_id"] = None
+            state["done"] = True
+        elif not has_meta and len(posts) == 0:
+            state["next_token"] = None
+            state["until_id"] = None
+            state["done"] = True
+        else:
+            # Complete but ambiguous — do not silently clear
+            state["done"] = False
+            if not next_token:
+                state["next_token"] = None
 
     out: dict[str, Any] = {
         "playbook": "all-posts",
@@ -368,11 +443,28 @@ def append_page(
         "post_count": len(ids),
         "pages": state["pages"],
         "next_token": state.get("next_token"),
+        "until_id": state.get("until_id"),
         "truncated": truncated,
-        "read_estimate": estimate_reads(len(ids)),
+        "page_incomplete": bool(state.get("page_incomplete")),
+        "max_results": state.get("max_results"),
+        "read_estimate": estimate_reads(len(ids), state.get("max_results") or MAX_RESULTS),
     }
 
-    if state.get("done"):
+    if truncated:
+        out["verdict"] = "WARN"
+        out["exit_code"] = 1
+        out["reasons"] = [
+            {
+                "severity": "WARN",
+                "code": "input_truncated",
+                "message": (
+                    f"Page truncated; recovered {len(page_ids)} post(s). "
+                    f"Will continue with until_id={state.get('until_id')!r} "
+                    f"max_results={state.get('max_results')}"
+                ),
+            }
+        ]
+    elif state.get("done"):
         report = build_report(state)
         state["report"] = report
         out["report"] = report
@@ -395,6 +487,16 @@ def build_report(state: dict[str, Any]) -> dict[str, Any]:
     clean_urls: list[str] = []
     clean_seen: set[str] = set()
     code_posts: dict[tuple[str, str], set[str]] = defaultdict(set)
+
+    if state.get("saw_truncation") or state.get("page_incomplete"):
+        flagged.append(
+            {
+                "id": "",
+                "url": "",
+                "reason": "One or more MCP pages were truncated during the scan",
+                "code": "input_truncated",
+            }
+        )
 
     for pid in state.get("post_ids") or []:
         post = posts_map.get(pid) or {}
@@ -462,9 +564,13 @@ def build_report(state: dict[str, Any]) -> dict[str, Any]:
             "campaign_code",
             "shared_tracking_code",
             "intermediate_hop",
+            "input_truncated",
         }:
             severities.append("WARN")
     verdict = worst_severity(*severities) if severities else Severity.OK
+    # Truncation during the scan must never yield a silent OK final report
+    if state.get("saw_truncation") and verdict == Severity.OK:
+        verdict = Severity.WARN
 
     return {
         "verdict": verdict.value,

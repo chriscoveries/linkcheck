@@ -150,7 +150,7 @@ def build_parser() -> argparse.ArgumentParser:
     xp.add_argument(
         "--max-results",
         type=int,
-        help="max_results for non-link playbooks (link scans always use 25)",
+        help="max_results (all-posts default 25, auto-halves after truncation down to 10)",
     )
     xp.add_argument("--text", "-t", help="Draft text (shared-code / shared-script)")
     xp.add_argument("--file", "-f", help="Read draft text from a file")

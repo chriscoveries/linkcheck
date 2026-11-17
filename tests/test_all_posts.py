@@ -133,3 +133,41 @@ def test_cli_all_posts_loop(tmp_path):
     body = json.loads(state.read_text(encoding="utf-8"))
     assert body["done"] is True
     assert len(body["post_ids"]) == 4
+
+
+def test_all_posts_truncated_page_never_done_uses_until_id(tmp_path):
+    """Host cutoff loses meta/next_token — must not silent-OK / done after partial recover."""
+    state = tmp_path / "state.json"
+    plan_all_posts(username="operator", state_path=state, max_results=25)
+
+    raw = (FIXTURES / "all_posts_truncated_page.json").read_text(encoding="utf-8")
+    assert "[... 6124 bytes from" in raw
+    out = append_page(raw, state)
+
+    assert out["truncated"] is True
+    assert out["done"] is False
+    assert out["verdict"] == "WARN"
+    assert out["exit_code"] == 1
+    assert any(r["code"] == "input_truncated" for r in out.get("reasons") or [])
+    assert out["added"] >= 2
+    # smallest recovered id among complete posts is 2001 → until_id 2000
+    assert out["until_id"] == "2000"
+    assert out["max_results"] == 12  # 25 // 2
+    assert out["next_token"] is None
+
+    body = json.loads(state.read_text(encoding="utf-8"))
+    assert body["done"] is False
+    assert body["page_incomplete"] is True
+    assert body["saw_truncation"] is True
+    assert body["until_id"] == "2000"
+    assert body["max_results"] == 12
+
+    nxt = plan_all_posts(username="operator", state_path=state)
+    assert nxt["done"] is False
+    assert nxt["call_count"] == 1
+    args = nxt["calls"][0]["arguments"]
+    assert args["until_id"] == "2000"
+    assert args["max_results"] == 12
+    assert "next_token" not in args
+    assert args["query"] == "from:operator has:links -is:retweet"
+    assert args["post.fields"] == ["id", "created_at", "entities"]
