@@ -1,0 +1,37 @@
+```untrusted-data
+{
+  "data": [
+    {
+      "id": "111",
+      "text": "First complete https://t.co/aaa",
+      "author_id": "99",
+      "created_at": "2024-06-01T12:00:00.000Z",
+      "entities": {
+        "urls": [
+          {
+            "url": "https://t.co/aaa",
+            "expanded_url": "https://news.example/a?utm_campaign=a1b2c3d4",
+            "display_url": "news.example/a"
+          }
+        ]
+      }
+    },
+    {
+      "id": "222",
+      "text": "Second complete https://t.co/bbb",
+      "author_id": "99",
+      "created_at": "2024-06-01T13:00:00.000Z",
+      "entities": {
+        "urls": [
+          {
+            "url": "https://t.co/bbb",
+            "expanded_url": "https://news.example/b?ref=creator123",
+            "display_url": "news.example/b"
+          }
+        ]
+      }
+    },
+    {
+      "id": "333",
+      "text": "This one is cut mid-string with a bad escape \u
+[... 36988 bytes from tool output truncated by host]

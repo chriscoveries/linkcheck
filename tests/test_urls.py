@@ -9,3 +9,11 @@ def test_extract_urls_and_strip():
     assert "cid=" not in clean
     assert "utm_campaign=" not in clean
     assert clean.startswith("https://example.com/a")
+
+
+def test_strip_tracking_removes_fbclid():
+    url = "https://example.com/a?utm_medium=cpc&fbclid=IwAR99&ok=1"
+    clean = strip_tracking(url)
+    assert "fbclid=" not in clean
+    assert "utm_medium=" not in clean
+    assert "ok=1" in clean

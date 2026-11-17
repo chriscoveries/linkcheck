@@ -1,0 +1,4 @@
+<tool_call_result source="CallDynamicTool">
+{"data":{"id":"99","username":"operator","name":"Operator"}}
+X reads left this month: 17.
+</tool_call_result>

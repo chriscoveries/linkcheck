@@ -24,7 +24,14 @@ Playbook files are also in `playbooks/`.
 1. `install` once per checkout.
 2. `scope` once. The checker will run on any text or any account id. Default is the operator's own draft and own posts. Do not collect other accounts.
 3. `check-draft` on the exact text before every post. Do it even if the user did not say "link".
-4. `check-own-posts` only for the operator's own already-posted items, and only if a bearer token is already set. If it is not set, skip that playbook and say so. Do not invent a token. Another account id only when the user names that one id and asks for it.
+4. `x-mcp` when the bot has an X MCP server named `x`. Prefer this for own-posts and cross-account searches.
+5. `check-own-posts` only as a bearer-token fallback when X MCP is unavailable. If no token is set, skip it and say so. Do not invent a token.
+
+## x-loop
+
+`linkcheck x-plan … --json` → CallDynamicTool each `{namespace,tool,arguments}` → **save each raw tool result to a file** (do not paste or read it inline) → resolve `{$from}` with `x-plan --resolve plan.json --outputs step1.txt … --json` → `linkcheck x-ingest --file … --json` → act on exit `0/1/2`.
+
+Link scans (`own-posts`, `all-posts`) use `from:<user> has:links -is:retweet`, `post.fields=["id","created_at","entities"]`, `max_results=25`. Read math: **ceil(posts_with_links / 25) = reads**. Full history: `x-plan all-posts --username U --state state.json` → call → `x-ingest --append state.json` until `done`; later `--incremental` for `since_id` only.
 
 ## Decisions
 

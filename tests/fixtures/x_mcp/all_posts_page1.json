@@ -1,0 +1,58 @@
+{
+  "data": [
+    {
+      "id": "1003",
+      "text": "Page1 newer https://t.co/aaa",
+      "author_id": "99",
+      "created_at": "2024-06-03T12:00:00.000Z",
+      "entities": {
+        "urls": [
+          {
+            "url": "https://t.co/aaa",
+            "expanded_url": "https://news.example/a?cid=deadbeef",
+            "display_url": "news.example/a"
+          }
+        ]
+      }
+    },
+    {
+      "id": "1002",
+      "text": "Page1 mid https://t.co/bbb",
+      "author_id": "99",
+      "created_at": "2024-06-02T12:00:00.000Z",
+      "entities": {
+        "urls": [
+          {
+            "url": "https://t.co/bbb",
+            "expanded_url": "https://news.example/b?cid=deadbeef",
+            "display_url": "news.example/b"
+          }
+        ]
+      }
+    },
+    {
+      "id": "1001",
+      "text": "Page1 older https://t.co/ccc",
+      "author_id": "99",
+      "created_at": "2024-06-01T12:00:00.000Z",
+      "entities": {
+        "urls": [
+          {
+            "url": "https://t.co/ccc",
+            "expanded_url": "https://news.example/c?ref=creator123",
+            "display_url": "news.example/c"
+          }
+        ]
+      }
+    }
+  ],
+  "meta": {
+    "result_count": 3,
+    "newest_id": "1003",
+    "oldest_id": "1001",
+    "next_token": "page2token"
+  },
+  "includes": {
+    "users": [{"id": "99", "username": "operator"}]
+  }
+}
