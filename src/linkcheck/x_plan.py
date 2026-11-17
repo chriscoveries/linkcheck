@@ -283,18 +283,18 @@ def _replace_from(value: Any, outputs: dict[str, Any]) -> Any:
 
 
 def _parse_one_output_blob(raw: str) -> Any:
-    """Parse one saved tool-output blob (fences/footers OK). Never requires step wrapping."""
+    """Parse one saved tool-output blob (XML tags / fences / footers OK)."""
     text = strip_wrappers(raw)
     if not text:
         raise ValueError("empty step output after stripping wrappers")
+    # strip_wrappers already starts at first { or [; raw_decode tolerates trailing junk
+    decoder = json.JSONDecoder()
     try:
-        return json.loads(text)
+        obj, _end = decoder.raw_decode(text)
+        return obj
     except json.JSONDecodeError:
-        # Tolerant: take the first complete object if host truncated mid-stream
-        decoder = json.JSONDecoder()
         try:
-            obj, _end = decoder.raw_decode(text.lstrip())
-            return obj
+            return json.loads(text)
         except json.JSONDecodeError as exc:
             raise ValueError(f"could not parse step output JSON: {exc}") from exc
 

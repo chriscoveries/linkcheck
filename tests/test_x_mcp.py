@@ -69,6 +69,47 @@ def test_x_plan_resolve_accepts_fenced_raw_outputs_file(tmp_path):
     )
 
 
+def test_x_plan_resolve_and_ingest_xml_tag_wrappers(tmp_path):
+    """Real host wraps JSON in <tag …> … </tag> plus an 'X reads left' footer."""
+    plan = build_plan("own-posts", username="operator")
+    plan_path = tmp_path / "plan.json"
+    plan_path.write_text(json.dumps(plan), encoding="utf-8")
+    step1 = FIXTURES / "step1_user_xml.txt"
+    raw_step = step1.read_text(encoding="utf-8")
+    assert "<" in raw_step and "CallDynamicTool" in raw_step
+    assert "X reads left" in raw_step
+
+    body = strip_wrappers(raw_step)
+    assert body.lstrip().startswith("{")
+    assert "reads left" not in body.lower()
+    assert "<" not in body
+
+    resolved = resolve_plan_files(plan_path, [step1])
+    assert resolved["calls"][1]["arguments"]["id"] == "99"
+    assert (
+        main(
+            ["x-plan", "--resolve", str(plan_path), "--outputs", str(step1), "--json"]
+        )
+        == 0
+    )
+
+    posts_raw = FIXTURES / "own_posts_xml.txt"
+    posts, truncated = extract_posts(posts_raw.read_text(encoding="utf-8"))
+    assert truncated is False
+    assert len(posts) == 1
+    assert posts[0]["urls"] == [
+        "https://news.example/story?utm_campaign=a1b2c3d4&fbclid=IwAR99"
+    ]
+    assert all("t.co" not in u for u in posts[0]["urls"])
+
+    result = run_ingest(posts_raw.read_text(encoding="utf-8"), offline=True)
+    compact = ingest_to_dict(result)
+    assert compact["clean_urls"]
+    assert all("t.co" not in u for u in compact["clean_urls"])
+    assert any("news.example" in u for u in compact["clean_urls"])
+    assert main(["x-ingest", "--file", str(posts_raw), "--json"]) in (0, 1, 2)
+
+
 def test_x_plan_shared_code_stable_order():
     plan = build_plan(
         "shared-code",

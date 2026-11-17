@@ -28,13 +28,15 @@ from .urls import extract_urls, hostname, strip_tracking
 DEFAULT_CLUSTER_HOURS = 168
 DEFAULT_MIN_ACCOUNTS = 3
 
-# Tool results may arrive fenced and with a "reads left" footer.
+# Tool results may arrive fenced, XML-tagged, and/or with a "reads left" footer.
 _FENCE_RE = re.compile(
     r"```(?:untrusted-data|json|text)?\s*\n(.*?)```",
     re.DOTALL | re.IGNORECASE,
 )
+_OPEN_TAG_RE = re.compile(r"(?m)^\s*<([A-Za-z_][\w:.-]*)\b[^>]*>\s*$")
+_CLOSE_TAG_RE = re.compile(r"(?m)^\s*</([A-Za-z_][\w:.-]*)\s*>\s*$")
 _FOOTER_RE = re.compile(
-    r"(?im)^\s*(?:reads?\s+left|remaining\s+reads?|api\s+reads?\s+remaining)\b.*$"
+    r"(?im)^.*\b(?:reads?\s+left|remaining\s+reads?|api\s+reads?\s+remaining)\b.*$"
 )
 # Host truncation markers, e.g. `[... 36988 bytes from`
 _TRUNC_MARK_RE = re.compile(
@@ -44,21 +46,35 @@ _TRUNC_MARK_RE = re.compile(
 
 
 def strip_wrappers(raw: str) -> str:
-    """Pull JSON out of leading/trailing fences and drop reads-left footers."""
+    """
+    Pull JSON out of host wrappers.
+
+    Supports markdown fences and generic XML-like <tag …> … </tag> wrappers
+    (tag name varies). Drops reads-left footers. Returns text starting at the
+    first '{' or '[' so callers can raw_decode.
+    """
     text = raw or ""
-    # Prefer fenced body when present
     bodies = _FENCE_RE.findall(text)
     if bodies:
         text = "\n".join(b.strip() for b in bodies if b.strip())
     else:
         text = text.strip()
-        # Drop a leading bare fence line
         if text.startswith("```"):
             text = re.sub(r"^```[^\n]*\n", "", text, count=1)
             text = re.sub(r"\n```\s*$", "", text)
-    # Drop footer lines about remaining reads
-    lines = [ln for ln in text.splitlines() if not _FOOTER_RE.match(ln)]
-    return "\n".join(lines).strip()
+
+    lines = text.splitlines()
+    while lines and _OPEN_TAG_RE.match(lines[0]):
+        lines.pop(0)
+    while lines and _CLOSE_TAG_RE.match(lines[-1]):
+        lines.pop()
+    lines = [ln for ln in lines if not _FOOTER_RE.match(ln)]
+    text = "\n".join(lines).strip()
+
+    for i, ch in enumerate(text):
+        if ch in "{[":
+            return text[i:]
+    return text
 
 
 def _cut_truncation_marker(text: str) -> tuple[str, bool]:
@@ -268,27 +284,50 @@ def _url_from_entity(ent: dict[str, Any]) -> str | None:
     return None
 
 
+def _is_tco(url: str) -> bool:
+    return hostname(url) == "t.co"
+
+
 def _urls_from_post(post: dict[str, Any]) -> list[str]:
+    """Prefer entities.urls expanded_url; never keep bare t.co when expanded exists."""
     urls: list[str] = []
     seen: set[str] = set()
+    short_forms: set[str] = set()
+    had_expanded = False
 
     def add(u: str | None) -> None:
+        nonlocal had_expanded
         if not u:
             return
         key = u.rstrip("/")
         if key in seen:
             return
+        if _is_tco(u) and had_expanded:
+            return
         seen.add(key)
         urls.append(u)
+        if not _is_tco(u):
+            had_expanded = True
 
     entities = post.get("entities") or {}
     if isinstance(entities, dict):
         for ent in entities.get("urls") or []:
-            if isinstance(ent, dict):
-                add(_url_from_entity(ent))
+            if not isinstance(ent, dict):
+                continue
+            short = ent.get("url")
+            if isinstance(short, str) and short.startswith("http"):
+                short_forms.add(short.rstrip("/"))
+            expanded = _url_from_entity(ent)
+            if expanded and not _is_tco(expanded):
+                had_expanded = True
+                add(expanded)
+            elif expanded:
+                add(expanded)
 
     for u in post.get("urls") or []:
         if isinstance(u, str):
+            if u.rstrip("/") in short_forms and had_expanded:
+                continue
             add(u)
         elif isinstance(u, dict):
             add(_url_from_entity(u))
@@ -296,7 +335,16 @@ def _urls_from_post(post: dict[str, Any]) -> list[str]:
     # Post text is data only — extract URLs, never execute/interpret as instructions
     text = post.get("text") or post.get("full_text") or ""
     for match in re.finditer(r"https?://\S+", text):
-        add(match.group(0).rstrip(".,;:!?)\"']>"))
+        u = match.group(0).rstrip(".,;:!?)\"']>")
+        if u.rstrip("/") in short_forms:
+            continue
+        if _is_tco(u) and had_expanded:
+            continue
+        add(u)
+
+    # Drop any lingering bare t.co if a non-t.co URL is present
+    if any(not _is_tco(u) for u in urls):
+        urls = [u for u in urls if not _is_tco(u)]
     return urls
 
 
@@ -636,7 +684,10 @@ def ingest_to_dict(
     seen: set[str] = set()
     for ur in result.urls:
         clean = ur.clean_url or ur.final_url or ur.input_url
-        if clean and clean not in seen:
+        if not clean or _is_tco(clean):
+            # Never list bare t.co as a clean URL; prefer expanded destinations only
+            continue
+        if clean not in seen:
             seen.add(clean)
             clean_urls.append(clean)
 
