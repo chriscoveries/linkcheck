@@ -9,12 +9,14 @@ Prefer this over `check-own-posts` / `monitor` when the bot already has X MCP to
 ```bash
 linkcheck x-plan <playbook> [args] --json   # note call_count; respect limits
 # For each calls[i]: CallDynamicTool {namespace, toolName: tool, arguments}
-# If arguments contain {"$from":"stepN..."}, run: linkcheck x-plan --resolve plan.json --outputs prior.json --json
-# Save every raw tool result (fences/footers OK) into one file
+# Save each raw result to its own file (do not read inline). Fences/footers OK.
+# If arguments contain {"$from":"stepN..."}:
+linkcheck x-plan --resolve plan.json --outputs step1.txt --json
+# After all calls:
 linkcheck x-ingest --file raw.json --json   # compact; add --verbose for full detail
 ```
 
-Exit codes: `0` clear, `1` ask, `2` stop.
+own-posts defaults to `max_results=10` (override with `--max-results`, cap 25). Exit codes: `0` clear, `1` ask, `2` stop.
 
 ## Playbooks
 
@@ -28,4 +30,4 @@ Exit codes: `0` clear, `1` ask, `2` stop.
 
 Each call is exactly `{namespace, tool, arguments}` with array fields (e.g. `"post.fields":["id","text","entities","created_at","author_id"]`). `max_results` ≤ 25. Plans cap at 30 calls; rate limits are 30/min and 1000/day UTC (`limits` on the plan).
 
-`$from` example: `"id": {"$from": "step1.data.id"}`. Never guess — resolve with `--resolve` / `--outputs`.
+`$from` example: `"id": {"$from": "step1.data.id"}`. Never guess — resolve with `--resolve --outputs step1.txt` (raw fenced tool output accepted; no hand-wrapping).

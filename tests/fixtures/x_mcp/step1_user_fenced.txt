@@ -1,0 +1,4 @@
+```untrusted-data
+{"data":{"id":"99","username":"operator","name":"Operator"}}
+```
+Reads left: 17

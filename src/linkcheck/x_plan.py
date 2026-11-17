@@ -11,16 +11,19 @@ from urllib.parse import parse_qs, urlparse
 from .tracking import extract_tracking_codes
 from .urls import extract_urls
 from .x_api import (
+    DEFAULT_OWN_POSTS_MAX_RESULTS,
     MAX_CALLS_PER_PLAN,
     MAX_RESULTS,
     POST_FIELDS,
     USER_FIELDS,
     EXPANSIONS,
+    clamp_max_results,
     finalize_plan,
     from_ref,
     mcp_call,
     search_posts_args,
 )
+from .x_ingest import strip_wrappers
 
 PLAYBOOKS = ("own-posts", "shared-code", "shared-script", "cluster")
 
@@ -103,10 +106,12 @@ def plan_own_posts(
     *,
     username: str | None = None,
     user_id: str | None = None,
+    max_results: int | None = None,
 ) -> dict[str, Any]:
     if not username and not user_id:
         raise ValueError("own-posts requires --username or --user-id")
 
+    n = clamp_max_results(max_results, default=DEFAULT_OWN_POSTS_MAX_RESULTS)
     calls: list[dict[str, Any]] = []
     if username and not user_id:
         calls.append(
@@ -123,7 +128,7 @@ def plan_own_posts(
                 "get_users_posts",
                 {
                     "id": from_ref("step1.data.id"),
-                    "max_results": MAX_RESULTS,
+                    "max_results": n,
                     "post.fields": list(POST_FIELDS),
                     "expansions": list(EXPANSIONS),
                     "user.fields": list(USER_FIELDS),
@@ -136,7 +141,7 @@ def plan_own_posts(
                 "get_users_posts",
                 {
                     "id": str(user_id),
-                    "max_results": MAX_RESULTS,
+                    "max_results": n,
                     "post.fields": list(POST_FIELDS),
                     "expansions": list(EXPANSIONS),
                     "user.fields": list(USER_FIELDS),
@@ -150,6 +155,7 @@ def plan_shared_code(
     *,
     text: str = "",
     codes: list[str] | None = None,
+    max_results: int | None = None,
 ) -> dict[str, Any]:
     values = list(codes or [])
     if text:
@@ -158,16 +164,22 @@ def plan_shared_code(
                 values.append(code)
     values = sorted(set(values))[:MAX_CALLS_PER_PLAN]
     calls = [
-        mcp_call("search_posts_all", search_posts_args(f'"{code}"'))
+        mcp_call(
+            "search_posts_all",
+            search_posts_args(f'"{code}"', max_results=max_results),
+        )
         for code in values
     ]
     return finalize_plan("shared-code", calls, codes=values)
 
 
-def plan_shared_script(*, text: str) -> dict[str, Any]:
+def plan_shared_script(*, text: str, max_results: int | None = None) -> dict[str, Any]:
     phrases = extract_distinctive_phrases(text)[:MAX_CALLS_PER_PLAN]
     calls = [
-        mcp_call("search_posts_all", search_posts_args(f'"{phrase}"'))
+        mcp_call(
+            "search_posts_all",
+            search_posts_args(f'"{phrase}"', max_results=max_results),
+        )
         for phrase in phrases
     ]
     return finalize_plan("shared-script", calls, phrases=phrases)
@@ -180,6 +192,7 @@ def plan_cluster(
     end_time: str | None = None,
     since_id: str | None = None,
     until_id: str | None = None,
+    max_results: int | None = None,
 ) -> dict[str, Any]:
     if not query:
         raise ValueError("cluster requires --query")
@@ -195,6 +208,7 @@ def plan_cluster(
                 since_id=since_id,
                 until_id=until_id,
                 sort_order="recency",
+                max_results=max_results,
             ),
         )
     ]
@@ -205,24 +219,31 @@ def build_plan(playbook: str, **kwargs: Any) -> dict[str, Any]:
     if playbook not in PLAYBOOKS:
         known = ", ".join(PLAYBOOKS)
         raise KeyError(f"unknown x-plan playbook {playbook!r}; known: {known}")
+    max_results = kwargs.get("max_results")
     if playbook == "own-posts":
         return plan_own_posts(
             username=kwargs.get("username"),
             user_id=kwargs.get("user_id"),
+            max_results=max_results,
         )
     if playbook == "shared-code":
-        return plan_shared_code(text=kwargs.get("text") or "", codes=kwargs.get("codes"))
+        return plan_shared_code(
+            text=kwargs.get("text") or "",
+            codes=kwargs.get("codes"),
+            max_results=max_results,
+        )
     if playbook == "shared-script":
         text = kwargs.get("text") or ""
         if not text:
             raise ValueError("shared-script requires --file or --text")
-        return plan_shared_script(text=text)
+        return plan_shared_script(text=text, max_results=max_results)
     return plan_cluster(
         query=kwargs.get("query") or "",
         start_time=kwargs.get("start_time") or "",
         end_time=kwargs.get("end_time"),
         since_id=kwargs.get("since_id"),
         until_id=kwargs.get("until_id"),
+        max_results=max_results,
     )
 
 
@@ -261,12 +282,29 @@ def _replace_from(value: Any, outputs: dict[str, Any]) -> Any:
     return value
 
 
+def _parse_one_output_blob(raw: str) -> Any:
+    """Parse one saved tool-output blob (fences/footers OK). Never requires step wrapping."""
+    text = strip_wrappers(raw)
+    if not text:
+        raise ValueError("empty step output after stripping wrappers")
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        # Tolerant: take the first complete object if host truncated mid-stream
+        decoder = json.JSONDecoder()
+        try:
+            obj, _end = decoder.raw_decode(text.lstrip())
+            return obj
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"could not parse step output JSON: {exc}") from exc
+
+
 def load_step_outputs(raw: str | dict | list) -> dict[str, Any]:
-    """Accept {step1: {...}, ...}, a list (→ step1..), or a single object (→ step1)."""
-    if isinstance(raw, str):
-        data = json.loads(raw)
-    else:
+    """Accept {step1: {...}}, a list (→ step1..), a single object (→ step1), or fenced raw."""
+    if isinstance(raw, (dict, list)):
         data = raw
+    else:
+        data = _parse_one_output_blob(raw)
     if isinstance(data, dict) and any(str(k).startswith("step") for k in data):
         return {str(k): v for k, v in data.items()}
     if isinstance(data, list):
@@ -274,6 +312,23 @@ def load_step_outputs(raw: str | dict | list) -> dict[str, Any]:
     if isinstance(data, dict):
         return {"step1": data}
     raise ValueError("outputs must be an object, list, or step-keyed map")
+
+
+def load_step_outputs_from_paths(paths: list[Path]) -> dict[str, Any]:
+    """
+    Load prior step outputs from one or more files.
+
+    - One file that is already {step1: ...} / a list → use that map.
+    - One or more raw tool-output files (fenced OK) → step1, step2, … in order.
+    """
+    if not paths:
+        raise ValueError("--outputs requires at least one file")
+    if len(paths) == 1:
+        return load_step_outputs(paths[0].read_text(encoding="utf-8"))
+    out: dict[str, Any] = {}
+    for i, path in enumerate(paths):
+        out[f"step{i + 1}"] = _parse_one_output_blob(path.read_text(encoding="utf-8"))
+    return out
 
 
 def resolve_plan(plan: dict[str, Any], outputs: dict[str, Any]) -> dict[str, Any]:
@@ -293,7 +348,11 @@ def resolve_plan(plan: dict[str, Any], outputs: dict[str, Any]) -> dict[str, Any
     return out
 
 
-def resolve_plan_files(plan_path: Path, outputs_path: Path) -> dict[str, Any]:
+def resolve_plan_files(plan_path: Path, outputs_paths: Path | list[Path]) -> dict[str, Any]:
     plan = json.loads(plan_path.read_text(encoding="utf-8"))
-    outputs = load_step_outputs(outputs_path.read_text(encoding="utf-8"))
+    if isinstance(outputs_paths, Path):
+        paths = [outputs_paths]
+    else:
+        paths = list(outputs_paths)
+    outputs = load_step_outputs_from_paths(paths)
     return resolve_plan(plan, outputs)

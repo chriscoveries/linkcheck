@@ -103,11 +103,20 @@ def build_parser() -> argparse.ArgumentParser:
     )
     xp.add_argument(
         "--outputs",
-        metavar="OUTPUTS.json",
-        help="Prior step outputs (list or {step1: ...}) for --resolve",
+        nargs="+",
+        metavar="FILE",
+        help=(
+            "Prior step output files for --resolve. Accepts raw fenced tool output "
+            "(step1.txt …) and/or a {step1:…} map; fences/footers stripped like x-ingest"
+        ),
     )
     xp.add_argument("--username", help="Account username (own-posts)")
     xp.add_argument("--user-id", help="Numeric account id (own-posts)")
+    xp.add_argument(
+        "--max-results",
+        type=int,
+        help="max_results per call (default 10 for own-posts, 25 otherwise; cap 25)",
+    )
     xp.add_argument("--text", "-t", help="Draft text (shared-code / shared-script)")
     xp.add_argument("--file", "-f", help="Read draft text from a file")
     xp.add_argument(
@@ -214,7 +223,10 @@ def _cmd_x_plan(args: argparse.Namespace) -> int:
             print("x-plan --resolve requires --outputs", file=sys.stderr)
             return 1
         try:
-            plan = resolve_plan_files(Path(args.resolve), Path(args.outputs))
+            plan = resolve_plan_files(
+                Path(args.resolve),
+                [Path(p) for p in args.outputs],
+            )
         except (OSError, ValueError, KeyError, json.JSONDecodeError) as exc:
             print(str(exc), file=sys.stderr)
             return 1
@@ -238,6 +250,7 @@ def _cmd_x_plan(args: argparse.Namespace) -> int:
                 end_time=args.end_time,
                 since_id=args.since_id,
                 until_id=args.until_id,
+                max_results=args.max_results,
             )
         except (ValueError, KeyError) as exc:
             print(str(exc), file=sys.stderr)
@@ -255,26 +268,48 @@ def _cmd_x_plan(args: argparse.Namespace) -> int:
 
 
 def _cmd_x_ingest(args: argparse.Namespace) -> int:
+    from .models import CheckResult, Finding
     from .x_ingest import extract_posts, ingest_to_dict, run_ingest
 
-    raw = Path(args.file).read_text(encoding="utf-8")
-    draft = None
-    if args.draft:
-        draft = Path(args.draft).read_text(encoding="utf-8")
-    result = run_ingest(
-        raw,
-        draft_text=draft,
-        blocklist_path=args.blocklist,
-        allowlist_path=args.allowlist,
-        shorteners_path=args.shorteners,
-        phrases_path=args.phrases,
-        check_age=bool(args.online) and not args.no_age,
-        offline=not args.online,
-    )
-    posts = extract_posts(raw)
+    try:
+        raw = Path(args.file).read_text(encoding="utf-8")
+        draft = None
+        if args.draft:
+            draft = Path(args.draft).read_text(encoding="utf-8")
+        result = run_ingest(
+            raw,
+            draft_text=draft,
+            blocklist_path=args.blocklist,
+            allowlist_path=args.allowlist,
+            shorteners_path=args.shorteners,
+            phrases_path=args.phrases,
+            check_age=bool(args.online) and not args.no_age,
+            offline=not args.online,
+        )
+        posts, _truncated = extract_posts(raw)
+    except Exception as exc:  # noqa: BLE001 — never traceback to the bot
+        result = CheckResult(
+            verdict="WARN",
+            exit_code=1,
+            reasons=[
+                Finding(
+                    severity="WARN",
+                    code="input_truncated",
+                    message=f"Failed to ingest MCP output: {exc}",
+                    detail={},
+                )
+            ],
+        )
+        posts = []
     if args.json:
         body = ingest_to_dict(result, posts=posts, verbose=args.verbose)
-        print(json.dumps(body, separators=(",", ":") if not args.verbose else None, indent=2 if args.verbose else None))
+        print(
+            json.dumps(
+                body,
+                separators=(",", ":") if not args.verbose else None,
+                indent=2 if args.verbose else None,
+            )
+        )
     else:
         sys.stdout.write(format_human(result))
         print(f"Ingested posts: {len(posts)}")

@@ -7,7 +7,7 @@ from pathlib import Path
 
 from linkcheck.cli import main
 from linkcheck.x_ingest import extract_posts, ingest_to_dict, run_ingest, strip_wrappers
-from linkcheck.x_plan import build_plan, resolve_plan
+from linkcheck.x_plan import build_plan, resolve_plan, resolve_plan_files
 
 FIXTURES = Path(__file__).parent / "fixtures" / "x_mcp"
 
@@ -26,9 +26,16 @@ def test_x_plan_own_posts_shape_and_from_placeholder():
     assert isinstance(step1["arguments"]["user.fields"], list)
     assert step2["tool"] == "get_users_posts"
     assert step2["arguments"]["id"] == {"$from": "step1.data.id"}
-    assert step2["arguments"]["max_results"] <= 25
+    assert step2["arguments"]["max_results"] == 10  # default own-posts
     assert isinstance(step2["arguments"]["post.fields"], list)
     assert "entities" in step2["arguments"]["post.fields"]
+
+
+def test_x_plan_own_posts_max_results_flag():
+    plan = build_plan("own-posts", user_id="99", max_results=25)
+    assert plan["calls"][0]["arguments"]["max_results"] == 25
+    plan_hi = build_plan("own-posts", user_id="99", max_results=100)
+    assert plan_hi["calls"][0]["arguments"]["max_results"] == 25
 
 
 def test_x_plan_resolve_substitutes_from():
@@ -37,6 +44,29 @@ def test_x_plan_resolve_substitutes_from():
     resolved = resolve_plan(plan, outputs)
     assert resolved["calls"][1]["arguments"]["id"] == "99"
     assert resolved["resolved"] is True
+
+
+def test_x_plan_resolve_accepts_fenced_raw_outputs_file(tmp_path):
+    plan = build_plan("own-posts", username="operator")
+    plan_path = tmp_path / "plan.json"
+    plan_path.write_text(json.dumps(plan), encoding="utf-8")
+    step1 = FIXTURES / "step1_user_fenced.txt"
+    resolved = resolve_plan_files(plan_path, [step1])
+    assert resolved["calls"][1]["arguments"]["id"] == "99"
+    # CLI path
+    assert (
+        main(
+            [
+                "x-plan",
+                "--resolve",
+                str(plan_path),
+                "--outputs",
+                str(step1),
+                "--json",
+            ]
+        )
+        == 0
+    )
 
 
 def test_x_plan_shared_code_stable_order():
@@ -60,7 +90,8 @@ def test_x_ingest_wrapped_fence_and_footer():
     assert body.lstrip().startswith("{")
     assert "Reads left" not in body
 
-    posts = extract_posts(raw)
+    posts, truncated = extract_posts(raw)
+    assert truncated is False
     assert len(posts) == 2
     assert posts[0]["account"] == "operator"
     assert posts[0]["urls"][0].startswith("https://news.example/")
@@ -77,6 +108,24 @@ def test_x_ingest_wrapped_fence_and_footer():
     assert "posts" in verbose
 
 
+def test_x_ingest_truncated_input_recovers_posts_no_traceback():
+    raw = (FIXTURES / "posts_truncated.json").read_text(encoding="utf-8")
+    assert "[... 36988 bytes from" in raw
+    # Must not raise
+    posts, truncated = extract_posts(raw)
+    assert truncated is True
+    assert len(posts) >= 2
+    assert {p["id"] for p in posts} >= {"111", "222"}
+
+    result = run_ingest(raw, offline=True)
+    assert any(r.code == "input_truncated" for r in result.reasons)
+    assert result.verdict in {"OK", "WARN", "BLOCK"}
+    assert result.exit_code in (0, 1, 2)
+    # CLI must also not traceback
+    code = main(["x-ingest", "--file", str(FIXTURES / "posts_truncated.json"), "--json"])
+    assert code in (0, 1, 2)
+
+
 def test_x_ingest_cluster_fixture_posting_time():
     raw = (FIXTURES / "search_cluster.json").read_text(encoding="utf-8")
     result = run_ingest(raw, offline=True, min_accounts=3, cluster_hours=24)
@@ -86,7 +135,6 @@ def test_x_ingest_cluster_fixture_posting_time():
 def test_cli_x_plan_and_ingest(tmp_path):
     plan_path = tmp_path / "plan.json"
     out_path = tmp_path / "out.json"
-    # Capture plan via running build + write
     plan = build_plan("own-posts", username="operator")
     plan_path.write_text(json.dumps(plan), encoding="utf-8")
     out_path.write_text(json.dumps({"step1": {"data": {"id": "99"}}}), encoding="utf-8")

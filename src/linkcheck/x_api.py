@@ -9,6 +9,10 @@ X_NAMESPACE = "x"
 
 # Cap results per call (tool max for this runtime contract).
 MAX_RESULTS = 25
+# Default for own-posts (keeps tool output smaller for hosts that truncate).
+DEFAULT_OWN_POSTS_MAX_RESULTS = 10
+# X get_users_posts rejects values below 5.
+MIN_RESULTS = 5
 
 # Rate limits the consumer must respect; plans never exceed max_calls_per_plan.
 RATE_PER_MINUTE = 30
@@ -68,6 +72,11 @@ def mcp_call(tool: str, arguments: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def clamp_max_results(value: int | None, *, default: int = MAX_RESULTS) -> int:
+    n = default if value is None else int(value)
+    return max(MIN_RESULTS, min(n, MAX_RESULTS))
+
+
 def search_posts_args(
     query: str,
     *,
@@ -76,10 +85,11 @@ def search_posts_args(
     since_id: str | None = None,
     until_id: str | None = None,
     sort_order: str = "recency",
+    max_results: int | None = None,
 ) -> dict[str, Any]:
     args: dict[str, Any] = {
         "query": query,
-        "max_results": MAX_RESULTS,
+        "max_results": clamp_max_results(max_results, default=MAX_RESULTS),
         "sort_order": sort_order,
         "post.fields": list(POST_FIELDS),
         "user.fields": list(USER_FIELDS),
@@ -111,7 +121,7 @@ def finalize_plan(playbook: str, calls: list[dict[str, Any]], **extra: Any) -> d
     for call in calls:
         args = call.get("arguments") or {}
         if "max_results" in args:
-            args["max_results"] = min(int(args["max_results"]), MAX_RESULTS)
+            args["max_results"] = clamp_max_results(int(args["max_results"]))
     body: dict[str, Any] = {
         "playbook": playbook,
         "call_count": len(calls),

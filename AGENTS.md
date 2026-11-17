@@ -29,7 +29,7 @@ Playbook files are also in `playbooks/`.
 
 ## x-loop
 
-`linkcheck x-plan … --json` → CallDynamicTool each `{namespace,tool,arguments}` (resolve `{$from}` via `x-plan --resolve`) → save raw output to a file → `linkcheck x-ingest --file … --json` → act on exit `0/1/2`.
+`linkcheck x-plan … --json` → CallDynamicTool each `{namespace,tool,arguments}` → **save each raw tool result to a file** (do not paste or read it inline) → resolve `{$from}` with `x-plan --resolve plan.json --outputs step1.txt … --json` (fenced raw files OK) → `linkcheck x-ingest --file … --json` → act on exit `0/1/2`. Default own-posts `max_results` is 10 (`--max-results` to raise, cap 25).
 
 ## Decisions
 

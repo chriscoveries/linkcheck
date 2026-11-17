@@ -36,6 +36,11 @@ _FENCE_RE = re.compile(
 _FOOTER_RE = re.compile(
     r"(?im)^\s*(?:reads?\s+left|remaining\s+reads?|api\s+reads?\s+remaining)\b.*$"
 )
+# Host truncation markers, e.g. `[... 36988 bytes from`
+_TRUNC_MARK_RE = re.compile(
+    r"\[\.\.\.\s*\d+\s*bytes?\s+from|\.\.\.\s*truncated",
+    re.IGNORECASE,
+)
 
 
 def strip_wrappers(raw: str) -> str:
@@ -54,6 +59,78 @@ def strip_wrappers(raw: str) -> str:
     # Drop footer lines about remaining reads
     lines = [ln for ln in text.splitlines() if not _FOOTER_RE.match(ln)]
     return "\n".join(lines).strip()
+
+
+def _cut_truncation_marker(text: str) -> tuple[str, bool]:
+    """Remove host truncation tails; return (prefix, truncated)."""
+    m = _TRUNC_MARK_RE.search(text or "")
+    if not m:
+        return text or "", False
+    return (text or "")[: m.start()], True
+
+
+def _scan_object_array(text: str, start: int) -> tuple[list[Any], bool]:
+    """raw_decode successive objects inside a JSON array starting after '['."""
+    decoder = json.JSONDecoder()
+    out: list[Any] = []
+    idx = start
+    truncated = False
+    length = len(text)
+    while idx < length:
+        while idx < length and text[idx] in " \t\r\n,":
+            idx += 1
+        if idx >= length:
+            truncated = True
+            break
+        if text[idx] == "]":
+            break
+        if text[idx] != "{":
+            truncated = True
+            break
+        try:
+            obj, end = decoder.raw_decode(text, idx)
+        except json.JSONDecodeError:
+            truncated = True
+            break
+        out.append(obj)
+        idx = end
+    return out, truncated
+
+
+def _recover_truncated_payload(text: str) -> tuple[list[dict[str, Any]], bool]:
+    """Recover complete post/user objects from truncated MCP JSON. Never raises."""
+    posts: list[Any] = []
+    users: list[Any] = []
+    truncated = True
+
+    data_m = re.search(r'"data"\s*:\s*\[', text)
+    if data_m:
+        posts, more = _scan_object_array(text, data_m.end())
+        truncated = truncated or more
+    else:
+        # Single-object data (e.g. get_users_by_username)
+        data_obj = re.search(r'"data"\s*:\s*\{', text)
+        if data_obj:
+            decoder = json.JSONDecoder()
+            try:
+                obj, _ = decoder.raw_decode(text, data_obj.end() - 1)
+                if isinstance(obj, dict) and ("text" in obj or "entities" in obj):
+                    posts = [obj]
+                elif isinstance(obj, dict):
+                    # User object — keep as a payload with data dict via includes path
+                    return [{"data": obj}], True
+            except json.JSONDecodeError:
+                pass
+
+    users_m = re.search(r'"users"\s*:\s*\[', text)
+    if users_m:
+        users, more = _scan_object_array(text, users_m.end())
+        truncated = truncated or more
+
+    payload: dict[str, Any] = {"data": posts}
+    if users:
+        payload["includes"] = {"users": users}
+    return [payload] if posts or users else [], truncated
 
 
 def _parse_date(value: str | None) -> datetime | None:
@@ -95,19 +172,31 @@ def _cluster_timestamps(
     return False, []
 
 
-def _loads_many(raw: str) -> list[Any]:
-    """Parse one JSON value, a JSON array, or concatenated / JSONL objects."""
-    text = strip_wrappers(raw)
+def _loads_many(raw: str) -> tuple[list[Any], bool]:
+    """Parse JSON / JSONL. Never raises. Returns (nodes, truncated)."""
+    truncated = False
+    try:
+        text = strip_wrappers(raw)
+    except Exception:  # noqa: BLE001 — ingest must never traceback
+        return [], True
+    text, cut = _cut_truncation_marker(text)
+    truncated = truncated or cut
     if not text:
-        return []
+        return [], truncated
+
     try:
         value = json.loads(text)
     except json.JSONDecodeError:
         value = None
     if value is not None:
         if isinstance(value, list):
-            return value
-        return [value]
+            return value, truncated
+        return [value], truncated
+
+    # Incomplete JSON: recover complete objects from data[] / users[]
+    recovered, rec_trunc = _recover_truncated_payload(text)
+    if recovered:
+        return recovered, True
 
     decoder = json.JSONDecoder()
     idx = 0
@@ -118,20 +207,23 @@ def _loads_many(raw: str) -> list[Any]:
             idx += 1
         if idx >= length:
             break
-        # Skip leftover fence/footer junk between objects
         if text[idx] not in "{[":
             nl = text.find("\n", idx)
             if nl == -1:
+                truncated = True
                 break
             idx = nl + 1
             continue
         try:
             obj, end = decoder.raw_decode(text, idx)
-        except json.JSONDecodeError as exc:
-            raise ValueError(f"invalid JSON at offset {idx}: {exc}") from exc
+        except json.JSONDecodeError:
+            truncated = True
+            break
         out.append(obj)
         idx = end
-    return out
+    if not out:
+        truncated = True
+    return out, truncated or True
 
 
 def _unwrap_payloads(nodes: list[Any]) -> list[dict[str, Any]]:
@@ -222,53 +314,64 @@ def _account_for_post(post: dict[str, Any], users: dict[str, dict[str, Any]]) ->
     return str(post.get("id") or "unknown")
 
 
-def extract_posts(raw: str | list[Any] | dict[str, Any]) -> list[dict[str, Any]]:
-    """Turn raw MCP JSON into normalized post rows (account, text, urls, created_at, id)."""
-    if isinstance(raw, str):
-        nodes = _loads_many(raw)
-    elif isinstance(raw, list):
-        nodes = raw
-    else:
-        nodes = [raw]
+def extract_posts(
+    raw: str | list[Any] | dict[str, Any],
+) -> tuple[list[dict[str, Any]], bool]:
+    """
+    Turn raw MCP JSON into normalized post rows.
 
-    payloads = _unwrap_payloads(nodes)
-    users: dict[str, dict[str, Any]] = {}
-    posts_raw: list[dict[str, Any]] = []
+    Returns (posts, truncated). Never raises — incomplete/host-truncated input
+    yields whatever complete post objects could be recovered.
+    """
+    truncated = False
+    try:
+        if isinstance(raw, str):
+            nodes, truncated = _loads_many(raw)
+        elif isinstance(raw, list):
+            nodes = raw
+        else:
+            nodes = [raw]
 
-    for payload in payloads:
-        includes = payload.get("includes") or {}
-        if isinstance(includes, dict):
-            for user in includes.get("users") or []:
-                if isinstance(user, dict) and user.get("id"):
-                    users[str(user["id"])] = user
+        payloads = _unwrap_payloads(nodes)
+        users: dict[str, dict[str, Any]] = {}
+        posts_raw: list[dict[str, Any]] = []
 
-        data = payload.get("data")
-        if isinstance(data, dict):
-            if "text" in data or "entities" in data:
-                posts_raw.append(data)
-            continue
-        if isinstance(data, list):
-            for item in data:
-                if not isinstance(item, dict):
-                    continue
-                if "text" in item or "entities" in item or item.get("author_id"):
-                    posts_raw.append(item)
+        for payload in payloads:
+            includes = payload.get("includes") or {}
+            if isinstance(includes, dict):
+                for user in includes.get("users") or []:
+                    if isinstance(user, dict) and user.get("id"):
+                        users[str(user["id"])] = user
 
-    rows: list[dict[str, Any]] = []
-    for post in posts_raw:
-        created = _parse_date(post.get("created_at") or post.get("date"))
-        rows.append(
-            {
-                "id": str(post.get("id") or ""),
-                "account": _account_for_post(post, users),
-                "text": post.get("text") or post.get("full_text") or "",
-                "urls": _urls_from_post(post),
-                "created_at": created.isoformat() if created else None,
-                "author_id": str(post.get("author_id") or ""),
-            }
-        )
-    rows.sort(key=lambda r: (r.get("created_at") or "", r.get("id") or ""))
-    return rows
+            data = payload.get("data")
+            if isinstance(data, dict):
+                if "text" in data or "entities" in data:
+                    posts_raw.append(data)
+                continue
+            if isinstance(data, list):
+                for item in data:
+                    if not isinstance(item, dict):
+                        continue
+                    if "text" in item or "entities" in item or item.get("author_id"):
+                        posts_raw.append(item)
+
+        rows: list[dict[str, Any]] = []
+        for post in posts_raw:
+            created = _parse_date(post.get("created_at") or post.get("date"))
+            rows.append(
+                {
+                    "id": str(post.get("id") or ""),
+                    "account": _account_for_post(post, users),
+                    "text": post.get("text") or post.get("full_text") or "",
+                    "urls": _urls_from_post(post),
+                    "created_at": created.isoformat() if created else None,
+                    "author_id": str(post.get("author_id") or ""),
+                }
+            )
+        rows.sort(key=lambda r: (r.get("created_at") or "", r.get("id") or ""))
+        return rows, truncated
+    except Exception:  # noqa: BLE001
+        return [], True
 
 
 def detect_posting_time_cluster(
@@ -393,7 +496,11 @@ def run_ingest(
     min_accounts: int = DEFAULT_MIN_ACCOUNTS,
     cluster_hours: int = DEFAULT_CLUSTER_HOURS,
 ) -> CheckResult:
-    posts = extract_posts(raw)
+    try:
+        posts, truncated = extract_posts(raw)
+    except Exception:  # noqa: BLE001
+        posts, truncated = [], True
+
     blocklist = load_domain_list(blocklist_path or default_path("blocklist.txt"))
     allowlist = load_domain_list(allowlist_path or default_path("allowlist.txt"))
     shorteners = load_domain_list(shorteners_path or default_path("shorteners.txt"))
@@ -402,6 +509,19 @@ def run_ingest(
     url_reports: list[UrlReport] = []
     reasons: list[Finding] = []
     all_urls: list[str] = []
+
+    if truncated:
+        reasons.append(
+            Finding(
+                severity="WARN",
+                code="input_truncated",
+                message=(
+                    f"MCP tool output was truncated or incomplete; "
+                    f"recovered {len(posts)} complete post object(s)"
+                ),
+                detail={"recovered_posts": len(posts)},
+            )
+        )
 
     for post in posts:
         for url in post.get("urls") or []:
