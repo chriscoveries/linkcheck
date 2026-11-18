@@ -2,11 +2,11 @@
 
 This repo is for an agent. A person is not expected to read it or run it.
 
-The agent starts with `AGENTS.md`, then `linkcheck runtime --json`, then the playbook for the job. The account's own draft is checked before anything is posted (`playbooks/check-draft.md`). Posts already up are a separate playbook, and only when a bearer token is already set.
+The agent starts with `AGENTS.md`, then `linkcheck runtime --json`, then the playbook for the job. It can audit the published influencer campaign dataset, match an operator's post IDs, or inspect draft links before an authorized publication.
 
 A short link can pass through a hidden hop that adds a code shared with other accounts. linkcheck follows the hops and reports OK, WARN, or BLOCK.
 
-Shortened links often pass through hidden redirect hops that attach tracking codes. When many accounts post links carrying the same tracker domain or campaign/creator codes, or the same scripted wording, outsiders can follow those hops and link the accounts together, exposing a coordinated network and the people in it. linkcheck inspects every link and draft before posting so that common, linkable info does not leak.
+Shortened links can carry shared tracking codes through redirect hops. Those associations support further investigation. Establishing who paid for a post, who authored it, or whether accounts coordinated requires additional evidence. The dataset tools retain the original records and disclosure flags so those questions can be checked.
 
 The pictures in [docs/problem.md](docs/problem.md) use only placeholder hosts (`short.example`, `track.example`, `news.example`) and unnamed accounts. They are not copies of anyone's posts.
 
@@ -14,7 +14,25 @@ The pictures in [docs/problem.md](docs/problem.md) use only placeholder hosts (`
 
 Copy-paste this to your bot:
 
-> This repo is linkcheck. You operate it; I will not read it. Install with `pip install -e .`, then run `linkcheck runtime --json` and follow the playbooks. Before you post anything for me, run the check-draft playbook on my draft (`linkcheck --json --no-age --file <draft>`). Exit 2: do not post. Exit 1: show me the reasons and wait. Exit 0: clear. If a token is already set, the check-own-posts playbook can review what I already posted.
+> Use https://github.com/chriscoveries/linkcheck to audit my account's inclusion in the influencer campaign dataset. Read AGENTS.md, install the tool, run `linkcheck runtime --json`, and follow `find-own-posts`. Ask for my handle if you need it. Show the exact source rows and post URLs. You may use my already-authorized X connector, browser, or archive to verify the returned posts; preserve disclosures and report access gaps. Keep private imports local. Do not edit or publish posts.
+
+For a broader audit, ask the agent to follow `explore-dataset`. It can prepare the entire snapshot and sort it by account, topic, date, disclosure flag, publisher, or destination group.
+
+## Dataset audit
+
+```bash
+linkcheck dataset account --handle JackPosobiec --json
+linkcheck dataset prepare --output ./audit-snapshot --json
+linkcheck dataset counts --source ./audit-snapshot/raw/all.json --json
+linkcheck dataset accounts --source ./audit-snapshot/raw/all.json --sort posts --desc --all --json
+linkcheck dataset accounts --source ./audit-snapshot/raw/all.json --min-posts 1 --max-posts 1 --all --format csv
+linkcheck dataset posts --source ./audit-snapshot/raw/all.json --category ai --sort date --desc --all --json
+linkcheck dataset match --source ./audit-snapshot/raw/all.json --posts-file ./my-posts.json --json
+```
+
+Preparation creates exact source JSON, an indexed SQLite database, four CSV tables, a zero/one-post inventory, and a manifest with file hashes. It refuses an existing output directory. Keep generated data outside version control. Matching reads exact IDs from X API responses, archive `tweets.js`, JSON, or JSONL; it reads no credentials and does not fetch a timeline itself.
+
+Every query identifies the source SHA-256 and the zero-based source rows. Filters have an explicit scope and report pagination. Default query limit is 100; `--all` returns every result. The source contains X post IDs and metadata, with no original post text. Errors cannot produce a successful zero-post count. See [dataset schema and examples](docs/dataset.md).
 
 ## How the leak happens
 
@@ -55,8 +73,9 @@ short link  →  hidden hop ?utm_campaign=<shared code>  →  article
 | [docs/examples.md](docs/examples.md) | OK, WARN, and BLOCK runs with the output |
 | [docs/problem.md](docs/problem.md) | Why a short link can group accounts, with placeholder figures |
 | [docs/schema.md](docs/schema.md) | `--json` fields for a bot |
+| [docs/dataset.md](docs/dataset.md) | Source joins, filters, exact-ID matching, SQLite, and evidence limits |
 | [AGENTS.md](AGENTS.md) | Instructions for any bot that can run a shell command |
-| [SKILL.md](SKILL.md) | Same rules, as a skill file |
+| [SKILL.md](SKILL.md) | Legacy draft-check skill; dataset audits start with `AGENTS.md` and runtime |
 
 ## Install
 
@@ -80,7 +99,7 @@ linkcheck --json --text "Draft with https://short.example/ab12"
 printf '%s' "draft text" | linkcheck --stdin
 ```
 
-Exit codes: `0` clear, `1` warn, `2` block. JSON shape: [docs/schema.md](docs/schema.md).
+Draft exit codes: `0` clear, `1` warn, `2` block. Dataset commands: `0` complete for this snapshot, `1` account not listed, `2` invalid or unavailable. JSON shapes: [draft checks](docs/schema.md), [dataset audit](docs/dataset.md).
 
 ### Files you edit
 
@@ -92,6 +111,8 @@ Exit codes: `0` clear, `1` warn, `2` block. JSON shape: [docs/schema.md](docs/sc
 
 ### Already-posted check
 
+This checks links in one page of recent posts. To find posts in the published campaign dataset, use `dataset account` or `dataset match`.
+
 ```bash
 export X_BEARER_TOKEN=...
 linkcheck monitor --user-id <id> --json
@@ -102,6 +123,8 @@ linkcheck monitor --user-id <id> --json
 ```bash
 pytest -q
 ```
+
+After editing canonical `playbooks/`, run `python scripts/sync_playbooks.py` before building. Tests require packaged playbooks to match so `runtime` works from an installed wheel outside a checkout.
 
 ## Limitations
 

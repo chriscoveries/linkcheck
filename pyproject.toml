@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "linkcheck"
-version = "0.2.0"
-description = "Pre-publish link hygiene for social drafts: redirect hops, tracker domains, and shared tracking codes."
+version = "0.3.0"
+description = "Agent-first link checks and reproducible audits of the public influencer campaign dataset."
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
@@ -37,7 +37,7 @@ Documentation = "https://github.com/chriscoveries/linkcheck#readme"
 where = ["src"]
 
 [tool.setuptools.package-data]
-linkcheck = ["data/*"]
+linkcheck = ["data/*", "playbooks/*.md", "playbooks/index.json", "docs/*.md"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

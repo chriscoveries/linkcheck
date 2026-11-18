@@ -1,0 +1,55 @@
+{
+  "schema_version": "1.0",
+  "audience": "agent",
+  "boot": ["install", "scope"],
+  "rule": "Choose the playbook for the requested task. Dataset audits are read-only and need no X token. Live account retrieval requires authorization. Check the operator's own draft before publishing. Preserve disclosures and evidence; do not ask the user to read this repo.",
+  "decisions": {
+    "0": "clear",
+    "1": "ask",
+    "2": "stop"
+  },
+  "dataset_decisions": {
+    "0": "query_complete_for_supplied_snapshot",
+    "1": "account_not_listed",
+    "2": "invalid_or_unavailable"
+  },
+  "playbooks": [
+    {
+      "id": "find-own-posts",
+      "file": "find-own-posts.md",
+      "when": "Find the operator's post records in the public dataset and, when authorized access is available, match exact IDs from their API, browser, or archive.",
+      "command": "linkcheck dataset account --handle <handle> --json"
+    },
+    {
+      "id": "explore-dataset",
+      "file": "explore-dataset.md",
+      "when": "Prepare the full public snapshot or filter and sort accounts, destination groups, and post records.",
+      "command": "linkcheck dataset prepare --output <new-private-directory> --json"
+    },
+    {
+      "id": "install",
+      "file": "install.md",
+      "when": "First action in this checkout, before any check.",
+      "command": "pip install -e ."
+    },
+    {
+      "id": "scope",
+      "file": "scope.md",
+      "when": "Read once at boot, before checking any text that might not be the operator's.",
+      "command": "linkcheck runtime --playbook scope"
+    },
+    {
+      "id": "check-draft",
+      "file": "check-draft.md",
+      "when": "Before sending, scheduling, or handing back a post draft. This is the account checking its own links first.",
+      "command": "linkcheck --json --no-age --file <draft-file>"
+    },
+    {
+      "id": "check-own-posts",
+      "file": "check-own-posts.md",
+      "when": "Review the links in one fetched page of the operator's recent posts. This does not search the campaign dataset or cover the full timeline.",
+      "command": "linkcheck monitor --user-id <id> --json",
+      "env": ["X_BEARER_TOKEN"]
+    }
+  ]
+}

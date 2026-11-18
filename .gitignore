@@ -10,3 +10,10 @@ venv/
 .env
 .coverage
 htmlcov/
+
+# Local audit snapshots and operator-provided reference examples.
+/audit-snapshot/
+/audit-workspaces/
+/my-posts.json
+/my-posts.jsonl
+/tweets.js

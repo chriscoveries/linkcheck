@@ -2,6 +2,8 @@
 
 Use this when the account should review links it has already posted. Drafts that are not posted yet use `check-draft` instead.
 
+For membership in the campaign dataset use `find-own-posts`. `monitor` fetches one page (10 posts by default, at most 100); its output includes only warnings/blocks. An empty result establishes neither a complete timeline search nor absence from the campaign dataset.
+
 ## Steps
 
 1. If `X_BEARER_TOKEN` is unset and `TWITTER_BEARER_TOKEN` is unset, do not call the network. Tell the user the history check was skipped because no token is set. Still run `check-draft` on anything not yet posted.

@@ -2,7 +2,7 @@
 
 You operate this repo. The user will not read it and should not be asked to.
 
-A short link can hop through a tracker that adds a code shared with other accounts. The same sentence across those accounts makes the group obvious. You check the account's own text before it is posted.
+Use the requested workflow: inspect draft links, locate an account's records in the campaign dataset, or prepare and sort the full published snapshot. Preserve source evidence and advertising disclosures. Shared links and wording can suggest a relationship; payment and authorship require separate evidence.
 
 ## Boot
 
@@ -11,7 +11,7 @@ pip install -e .
 linkcheck runtime --json
 ```
 
-The JSON from `runtime` is the map: playbook ids, when each one runs, the command, and exit decisions (`0` clear, `1` ask, `2` stop). Read a playbook with:
+The JSON from `runtime` is the map: playbook ids, when each one runs, commands, and separate exit decisions for draft checks and dataset queries. Read a playbook with:
 
 ```bash
 linkcheck runtime --playbook check-draft
@@ -23,10 +23,18 @@ Playbook files are also in `playbooks/`.
 
 1. `install` once per checkout.
 2. `scope` once. The checker will run on any text or any account id. Default is the operator's own draft and own posts. Do not collect other accounts.
-3. `check-draft` on the exact text before every post. Do it even if the user did not say "link".
-4. `check-own-posts` only for the operator's own already-posted items, and only if a bearer token is already set. If it is not set, skip that playbook and say so. Do not invent a token. Another account id only when the user names that one id and asks for it.
+3. Choose `find-own-posts` for dataset membership or authorized exact-ID matching. Use `explore-dataset` for full-snapshot filtering, sorting, counts, and offline preparation. Public dataset lookup requires no X token.
+4. Run `check-draft` on the exact text before every authorized publication. Use `check-own-posts` only for an authorized recent-timeline link check and only if a bearer token is already set. It fetches one page and is separate from dataset membership.
 
-## Decisions
+An explicit request to audit this public dataset authorizes aggregation of its existing rows. It does not authorize fetching everyone else's timelines. When the operator provides their own X/API/browser/archive access, use only that interface and retain exact string IDs. Never extract credentials or bypass access restrictions. Do not commit private imports or generated audit workspaces.
+
+## Dataset results
+
+`dataset account`, `counts`, `posts`, `accounts`, `campaigns`, `match`, and `prepare` are read-only against external services. All commands accept a pinned `--source` and `--json`. Queries default to 100 rows; use `--all` when the user requests everyone.
+
+Exit 0 means the query completed for this snapshot, exit 1 means an account is absent from its index, and exit 2 means unavailable or invalid input. Failed retrieval is not zero evidence. Record the source SHA-256, build date, scope, and JSON pointers. Count distinct post IDs, including records labelled deleted/private. Original post text is absent. The publisher's disclosure flags do not independently prove payment.
+
+## Draft decisions
 
 | Exit | Do |
 | --- | --- |
