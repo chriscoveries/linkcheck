@@ -26,13 +26,13 @@ def _read_text_arg(args: argparse.Namespace) -> str:
     return "\n".join(chunks).strip()
 
 
-def build_parser() -> argparse.ArgumentParser:
+def build_parser(*, command_mode: bool = False) -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="linkcheck",
         description=(
-            "Inspect a social post draft for leakable redirect hops, tracker domains, "
-            "and shared tracking codes/wording before publishing."
+            "Inspect draft links or audit the public campaign dataset."
         ),
+        epilog="Subcommands: runtime, monitor, dataset. Put a subcommand first; use <subcommand> --help for its options.",
     )
     p.add_argument("--version", action="version", version=f"linkcheck {__version__}")
     p.add_argument("--text", "-t", help="Draft text to inspect")
@@ -42,7 +42,10 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Read draft text from stdin (also default when stdin is piped)",
     )
-    p.add_argument("urls", nargs="*", help="URLs to inspect (optional; also extracted from text)")
+    if not command_mode:
+        p.add_argument("urls", nargs="*", help="URLs to inspect (optional; also extracted from text)")
+    else:
+        p.set_defaults(urls=[])
     p.add_argument("--json", action="store_true", help="Emit machine-readable JSON (see docs/schema.md)")
     p.add_argument("--blocklist", type=Path, help="Domain blocklist file (one domain per line)")
     p.add_argument("--allowlist", type=Path, help="Domain allowlist file")
@@ -51,16 +54,24 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--corpus", type=Path, help="JSONL corpus of recent posts from other accounts")
     p.add_argument("--no-age", action="store_true", help="Skip RDAP/WHOIS domain-age checks")
 
+    if not command_mode:
+        p.set_defaults(command=None)
+        return p
     sub = p.add_subparsers(dest="command")
 
     rt = sub.add_parser("runtime", help="Print the agent playbook index")
     rt.add_argument("--json", action="store_true", help="Emit the runtime index as JSON")
     rt.add_argument("--playbook", help="Print one playbook by id")
+    rt.add_argument("--schema", choices=("draft", "dataset"), help="Print bundled result-schema documentation")
 
     mon = sub.add_parser("monitor", help="Check this account's already-posted links")
     mon.add_argument("--user-id", required=True, help="Numeric account id")
     mon.add_argument("--max-results", type=int, default=10)
     mon.add_argument("--json", action="store_true", help="Emit JSON")
+
+    from .cli_dataset import add_dataset_parser
+
+    add_dataset_parser(sub)
     return p
 
 
@@ -83,9 +94,12 @@ def _cmd_monitor(args: argparse.Namespace) -> int:
 def _cmd_runtime(args: argparse.Namespace) -> int:
     from pydantic import ValidationError
 
-    from .runtime import format_runtime_error, playbook_text, runtime_payload
+    from .runtime import format_runtime_error, playbook_text, runtime_payload, schema_text
 
     try:
+        if args.schema:
+            sys.stdout.write(schema_text(args.schema))
+            return 0
         if args.playbook:
             text = playbook_text(args.playbook)
             sys.stdout.write(text if text.endswith("\n") else text + "\n")
@@ -107,7 +121,10 @@ def _cmd_runtime(args: argparse.Namespace) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = build_parser()
+    argv = list(sys.argv[1:] if argv is None else argv)
+    # A greedy legacy URL positional otherwise consumes "dataset" before the
+    # nested subparser can see it. Select the command grammar up front.
+    parser = build_parser(command_mode=bool(argv and argv[0] in {"runtime", "monitor", "dataset"}))
     args = parser.parse_args(argv)
 
     if args.command == "runtime":
@@ -115,6 +132,11 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "monitor":
         return _cmd_monitor(args)
+
+    if args.command == "dataset":
+        from .cli_dataset import run_dataset_command
+
+        return run_dataset_command(args)
 
     text = _read_text_arg(args)
     extra = list(args.urls or [])

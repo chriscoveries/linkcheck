@@ -28,6 +28,7 @@ class RuntimeIndex(BaseModel):
     boot: list[str]
     rule: str
     decisions: dict[str, str]
+    dataset_decisions: dict[str, str] = Field(default_factory=dict)
     playbooks: list[Playbook]
 
 
@@ -60,8 +61,16 @@ def runtime_payload() -> dict:
     body["name"] = "linkcheck"
     body["version"] = __version__
     body["invoke"] = "linkcheck"
-    body["result_schema"] = "docs/schema.md"
+    body["result_schema"] = "linkcheck runtime --schema draft"
+    body["dataset_schema"] = "linkcheck runtime --schema dataset"
     return body
+
+
+def schema_text(schema: str) -> str:
+    filenames = {"draft": "schema.md", "dataset": "dataset.md"}
+    if schema not in filenames:
+        raise KeyError("Unknown schema; choose draft or dataset.")
+    return (Path(__file__).resolve().parent / "docs" / filenames[schema]).read_text(encoding="utf-8")
 
 
 def playbook_text(playbook_id: str) -> str:
