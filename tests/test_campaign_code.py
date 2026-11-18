@@ -1,4 +1,5 @@
 from linkcheck.check import run_check
+from linkcheck.models import Hop
 from linkcheck.tracking import analyze_tracking_params
 
 
@@ -12,7 +13,9 @@ def test_hex_utm_campaign_warns_plain_utm_does_not():
     assert any(f.code == "utm_params" for f in plain)
 
 
-def test_draft_with_shared_code_is_warn(tmp_path):
+def test_draft_with_shared_code_is_warn(tmp_path, monkeypatch):
+    # This test concerns query-parameter detection; no external HTTP is needed.
+    monkeypatch.setattr("linkcheck.check.trace_url", lambda url, **kwargs: [Hop(index=0, url=url, status=200)])
     block = tmp_path / "blocklist.txt"
     block.write_text("# empty\n", encoding="utf-8")
     result = run_check(

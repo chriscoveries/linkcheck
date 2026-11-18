@@ -328,6 +328,9 @@ class DatasetSnapshot:
         post = self.data["posts"][index]
         account, campaign = self.data["accounts"][post[1]], self.data["campaigns"][post[2]]
         flags = post[4]
+        # Match the publisher's frontend display rule while preserving the
+        # original zero in data, raw_record and the byte-identical snapshot.
+        views = None if post[5] == 0 and post[3] < "2023-01-01" else post[5]
         return {"id": post[0], "handle": account["h"], "name": account.get("name", account["h"]),
                 "date": post[3], "url": f"https://x.com/{account['h']}/status/{post[0]}",
                 "source_pointer": f"/posts/{index}", "account_pointer": f"/accounts/{post[1]}",
@@ -336,7 +339,7 @@ class DatasetSnapshot:
                 "publisher": campaign.get("pub", ""), "category": campaign["cat"],
                 "destination_url": campaign.get("url", ""), "flags": flags,
                 "labelled_as_ad": bool(flags & 8), "deleted": bool(flags & 2), "private": bool(flags & 4),
-                "uninterpreted_flags": flags & ~14, "views": post[5],
+                "uninterpreted_flags": flags & ~14, "views": views,
                 "archive_url": post[6] if len(post) > 6 else None, "raw_record": list(post)}
 
     def account_report(self, handle: str) -> dict[str, Any]:

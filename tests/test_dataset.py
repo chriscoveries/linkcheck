@@ -87,6 +87,36 @@ def test_original_bytes_preserved_with_bom_and_whitespace(body):
     assert data.sha256 == hashlib.sha256(raw).hexdigest()
 
 
+@pytest.mark.parametrize("post_date,raw_views,expected_views", [
+    ("2020-08-26", 0, None),
+    ("2022-12-31", 0, None),
+    ("2023-01-01", 0, 0),
+    ("2026-11-15", 0, 0),
+    ("2022-12-31", 123, 123),
+    ("2023-01-01", 123, 123),
+    ("2022-12-31", None, None),
+    ("2023-01-01", None, None),
+])
+def test_views_follow_frontend_rule_without_mutating_evidence(body, post_date, raw_views, expected_views):
+    body["posts"][0][3] = post_date
+    body["posts"][0][5] = raw_views
+    body["campaigns"][0]["first"] = min(row[3] for row in body["posts"])
+    body["campaigns"][0]["last"] = max(row[3] for row in body["posts"])
+    raw = json.dumps(body, indent=2).encode()
+    data = parse_dataset(raw)
+    metadata = data.metadata()
+
+    post = data.post_record(0)
+    assert post["views"] == expected_views
+    assert post["raw_record"] == body["posts"][0]
+    assert post["raw_record"][5] == raw_views
+    assert data.account_report("Alice")["posts"][0]["views"] == expected_views
+    assert data.data == body
+    assert data.raw_content == raw
+    assert data.sha256 == hashlib.sha256(raw).hexdigest()
+    assert data.metadata() == metadata
+
+
 @pytest.mark.parametrize("key", ["posts", "accounts", "campaigns", "cats", "built"])
 def test_missing_required_field_cannot_be_zero(body, key):
     del body[key]

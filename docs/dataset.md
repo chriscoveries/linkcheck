@@ -13,6 +13,8 @@
 
 IDs remain strings. A post's `source_pointer`, `account_pointer`, and `campaign_pointer` refer to the zero-based arrays in the unmodified source. Each result includes its SHA-256, byte count, source label, retrieval time, and publisher build timestamp. Optional metadata and the raw row remain available for inspection.
 
+`views` follows the explorer frontend's display rule: a source value of zero on a post dated before `2023-01-01` becomes `null` (unknown) in decoded output. `raw_record[5]`, SQLite `raw_json`, and `raw/all.json` retain the original zero. This prevents placeholder values being counted as known view measurements or sorted as measured zeros. The pinned November 15 snapshot has 261 such records. `views_known_count` excludes them.
+
 Flags preserve the site's meanings: bit 8 is a recorded advertising disclosure; bit 2 marks a post the site labels deleted/unretrievable; bit 4 marks private. Other bits are exposed as `uninterpreted_flags`. These are historical publisher labels. Lack of an ad label leaves payment unresolved. Current availability requires a new check.
 
 The loader rejects malformed/truncated JSON, duplicate IDs, broken references, unsafe numeric IDs, invalid dates, and disagreement with declared destination-group counts or date ranges. Successful validation checks internal consistency, not the publisher's collection completeness or the truth of its attribution.

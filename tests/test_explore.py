@@ -120,13 +120,32 @@ def test_account_aggregates_use_selected_posts_and_keep_full_total(snapshot):
 
 def test_summary_includes_partial_view_coverage_and_unknown_flags(snapshot):
     alice = query_accounts(snapshot, handle="Alice")["rows"][0]
-    assert alice["views"] == 0
-    assert alice["views_known_count"] == 1
+    assert alice["views"] is None
+    assert alice["views_known_count"] == 0
     assert alice["post_count"] == 3
+    old_zero = query_posts(snapshot, ad=True)["rows"][0]
+    assert old_zero["views"] is None
+    assert old_zero["raw_record"][5] == 0
     dan = query_accounts(snapshot, handle="Dan")["rows"][0]
     assert dan["uninterpreted_flag_count"] == 1
     assert dan["ad_count"] == 0
     assert dan["views"] == 20
+
+
+def test_account_and_campaign_view_coverage_preserve_zero_from_2023(body):
+    body["posts"][1][3] = "2023-01-01"
+    body["campaigns"][0]["last"] = "2023-01-01"
+    snapshot = make_snapshot(body)
+    account = query_accounts(snapshot, handle="Alice")["rows"][0]
+    assert account["views"] == 0
+    assert account["views_known_count"] == 1
+    assert account["post_count"] == 3
+    campaign = query_campaigns(snapshot, campaign="alpha")["rows"][0]
+    assert campaign["views"] == 10
+    assert campaign["views_known_count"] == 2
+    selected = query_campaigns(snapshot, since="2023-01-01")["rows"][0]
+    assert selected["views"] == 0
+    assert selected["views_known_count"] == selected["post_count"] == 1
 
 
 def test_campaign_groups_aggregate_filtered_posts(snapshot, body):
@@ -212,8 +231,8 @@ def test_arbitrary_decimal_string_ids_do_not_overflow(body):
 
 
 @pytest.mark.parametrize("descending,expected", [
-    (False, ["9007199254740995", "9007199254740994", "2", "10", "9007199254740993"]),
-    (True, ["2", "9007199254740994", "9007199254740995", "10", "9007199254740993"]),
+    (False, ["9007199254740994", "2", "10", "9007199254740993", "9007199254740995"]),
+    (True, ["2", "9007199254740994", "10", "9007199254740993", "9007199254740995"]),
 ])
 def test_post_null_values_are_last_in_either_sort_direction(snapshot, descending, expected):
     assert ids(query_posts(snapshot, sort="views", descending=descending)) == expected
